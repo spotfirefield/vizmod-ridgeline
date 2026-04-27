@@ -1,0 +1,481 @@
+city,avg_temp_c,month_num
+London,-1.2,1
+London,0.4,1
+London,2.8,1
+London,-0.6,1
+London,3.5,2
+London,4.1,2
+London,2.2,2
+London,5.6,2
+London,7.3,3
+London,9.1,3
+London,6.8,3
+London,10.4,3
+London,11.2,4
+London,13.5,4
+London,10.8,4
+London,14.7,4
+London,15.3,5
+London,17.8,5
+London,14.6,5
+London,18.9,5
+London,19.4,6
+London,21.2,6
+London,18.7,6
+London,22.5,6
+London,22.8,7
+London,24.3,7
+London,21.6,7
+London,25.1,7
+London,22.4,8
+London,23.9,8
+London,20.8,8
+London,24.6,8
+London,18.3,9
+London,19.7,9
+London,17.5,9
+London,20.4,9
+London,13.6,10
+London,14.8,10
+London,12.3,10
+London,15.2,10
+London,7.8,11
+London,8.9,11
+London,6.5,11
+London,9.4,11
+London,2.3,12
+London,3.7,12
+London,1.1,12
+London,4.5,12
+New York,-4.3,1
+New York,-2.8,1
+New York,-6.1,1
+New York,-1.5,1
+New York,-3.2,2
+New York,-1.4,2
+New York,-5.6,2
+New York,0.8,2
+New York,4.2,3
+New York,6.7,3
+New York,3.1,3
+New York,8.4,3
+New York,11.3,4
+New York,13.8,4
+New York,10.2,4
+New York,15.1,4
+New York,17.4,5
+New York,20.3,5
+New York,16.1,5
+New York,21.8,5
+New York,23.5,6
+New York,26.2,6
+New York,22.4,6
+New York,27.8,6
+New York,27.3,7
+New York,29.8,7
+New York,26.1,7
+New York,31.4,7
+New York,26.8,8
+New York,28.5,8
+New York,25.2,8
+New York,30.1,8
+New York,22.4,9
+New York,24.1,9
+New York,20.7,9
+New York,25.3,9
+New York,14.8,10
+New York,16.5,10
+New York,13.2,10
+New York,17.9,10
+New York,7.3,11
+New York,9.1,11
+New York,5.8,11
+New York,10.4,11
+New York,-1.8,12
+New York,0.6,12
+New York,-3.4,12
+New York,2.1,12
+Toronto,-8.6,1
+Toronto,-6.9,1
+Toronto,-10.3,1
+Toronto,-5.4,1
+Toronto,-7.2,2
+Toronto,-5.5,2
+Toronto,-9.1,2
+Toronto,-3.8,2
+Toronto,-0.4,3
+Toronto,2.3,3
+Toronto,-1.9,3
+Toronto,4.1,3
+Toronto,8.7,4
+Toronto,11.2,4
+Toronto,7.4,4
+Toronto,13.5,4
+Toronto,15.8,5
+Toronto,18.4,5
+Toronto,14.6,5
+Toronto,20.1,5
+Toronto,21.3,6
+Toronto,23.9,6
+Toronto,20.1,6
+Toronto,25.4,6
+Toronto,25.6,7
+Toronto,27.8,7
+Toronto,24.2,7
+Toronto,29.5,7
+Toronto,24.9,8
+Toronto,26.7,8
+Toronto,23.4,8
+Toronto,28.3,8
+Toronto,19.8,9
+Toronto,21.4,9
+Toronto,18.2,9
+Toronto,22.6,9
+Toronto,11.3,10
+Toronto,13.1,10
+Toronto,9.8,10
+Toronto,14.6,10
+Toronto,3.4,11
+Toronto,5.2,11
+Toronto,1.8,11
+Toronto,6.7,11
+Toronto,-5.8,12
+Toronto,-4.1,12
+Toronto,-7.4,12
+Toronto,-2.5,12
+Oslo,-7.4,1
+Oslo,-9.8,1
+Oslo,-5.2,1
+Oslo,-11.3,1
+Oslo,-8.6,2
+Oslo,-6.3,2
+Oslo,-10.9,2
+Oslo,-4.7,2
+Oslo,-3.1,3
+Oslo,-0.8,3
+Oslo,-5.4,3
+Oslo,1.6,3
+Oslo,5.2,4
+Oslo,8.4,4
+Oslo,3.7,4
+Oslo,10.8,4
+Oslo,12.6,5
+Oslo,15.3,5
+Oslo,10.9,5
+Oslo,17.4,5
+Oslo,18.2,6
+Oslo,21.7,6
+Oslo,16.4,6
+Oslo,23.5,6
+Oslo,22.8,7
+Oslo,25.4,7
+Oslo,20.3,7
+Oslo,27.1,7
+Oslo,21.5,8
+Oslo,23.8,8
+Oslo,19.7,8
+Oslo,25.2,8
+Oslo,15.4,9
+Oslo,17.6,9
+Oslo,13.2,9
+Oslo,18.9,9
+Oslo,7.8,10
+Oslo,9.4,10
+Oslo,5.6,10
+Oslo,11.2,10
+Oslo,-0.3,11
+Oslo,1.8,11
+Oslo,-2.4,11
+Oslo,3.5,11
+Oslo,-5.1,12
+Oslo,-7.8,12
+Oslo,-3.4,12
+Oslo,-9.2,12
+Cairo,12.4,1
+Cairo,14.8,1
+Cairo,10.9,1
+Cairo,16.3,1
+Cairo,14.6,2
+Cairo,17.2,2
+Cairo,13.1,2
+Cairo,18.7,2
+Cairo,18.3,3
+Cairo,21.5,3
+Cairo,16.8,3
+Cairo,23.4,3
+Cairo,24.6,4
+Cairo,27.3,4
+Cairo,22.8,4
+Cairo,29.1,4
+Cairo,29.4,5
+Cairo,32.1,5
+Cairo,27.6,5
+Cairo,33.8,5
+Cairo,32.7,6
+Cairo,35.4,6
+Cairo,31.2,6
+Cairo,37.1,6
+Cairo,35.8,7
+Cairo,38.3,7
+Cairo,34.1,7
+Cairo,40.2,7
+Cairo,36.2,8
+Cairo,38.7,8
+Cairo,34.6,8
+Cairo,40.5,8
+Cairo,31.4,9
+Cairo,33.8,9
+Cairo,29.7,9
+Cairo,35.2,9
+Cairo,26.8,10
+Cairo,28.4,10
+Cairo,25.1,10
+Cairo,30.3,10
+Cairo,19.3,11
+Cairo,21.6,11
+Cairo,17.8,11
+Cairo,23.4,11
+Cairo,13.7,12
+Cairo,15.9,12
+Cairo,12.2,12
+Cairo,17.4,12
+Mumbai,24.8,1
+Mumbai,26.3,1
+Mumbai,23.4,1
+Mumbai,27.6,1
+Mumbai,25.6,2
+Mumbai,27.1,2
+Mumbai,24.3,2
+Mumbai,28.4,2
+Mumbai,27.8,3
+Mumbai,29.4,3
+Mumbai,26.5,3
+Mumbai,30.7,3
+Mumbai,29.6,4
+Mumbai,31.2,4
+Mumbai,28.4,4
+Mumbai,32.5,4
+Mumbai,30.8,5
+Mumbai,32.3,5
+Mumbai,29.7,5
+Mumbai,33.6,5
+Mumbai,29.4,6
+Mumbai,30.8,6
+Mumbai,28.6,6
+Mumbai,31.5,6
+Mumbai,28.7,7
+Mumbai,30.1,7
+Mumbai,27.9,7
+Mumbai,31.2,7
+Mumbai,29.1,8
+Mumbai,30.4,8
+Mumbai,28.3,8
+Mumbai,31.6,8
+Mumbai,29.8,9
+Mumbai,31.2,9
+Mumbai,28.6,9
+Mumbai,32.4,9
+Mumbai,31.4,10
+Mumbai,32.8,10
+Mumbai,30.2,10
+Mumbai,34.1,10
+Mumbai,30.6,11
+Mumbai,32.1,11
+Mumbai,29.4,11
+Mumbai,33.4,11
+Mumbai,26.8,12
+Mumbai,28.3,12
+Mumbai,25.5,12
+Mumbai,29.6,12
+Singapore,26.8,1
+Singapore,27.4,1
+Singapore,26.2,1
+Singapore,28.1,1
+Singapore,27.2,2
+Singapore,27.9,2
+Singapore,26.6,2
+Singapore,28.6,2
+Singapore,27.6,3
+Singapore,28.3,3
+Singapore,27.1,3
+Singapore,29.0,3
+Singapore,28.1,4
+Singapore,28.8,4
+Singapore,27.5,4
+Singapore,29.4,4
+Singapore,28.4,5
+Singapore,29.1,5
+Singapore,27.8,5
+Singapore,29.7,5
+Singapore,28.6,6
+Singapore,29.2,6
+Singapore,28.0,6
+Singapore,29.8,6
+Singapore,28.2,7
+Singapore,28.9,7
+Singapore,27.7,7
+Singapore,29.5,7
+Singapore,28.0,8
+Singapore,28.7,8
+Singapore,27.4,8
+Singapore,29.3,8
+Singapore,27.8,9
+Singapore,28.5,9
+Singapore,27.2,9
+Singapore,29.1,9
+Singapore,27.6,10
+Singapore,28.2,10
+Singapore,27.0,10
+Singapore,28.9,10
+Singapore,27.1,11
+Singapore,27.8,11
+Singapore,26.5,11
+Singapore,28.4,11
+Singapore,26.7,12
+Singapore,27.3,12
+Singapore,26.1,12
+Singapore,28.0,12
+Sydney,25.8,1
+Sydney,27.4,1
+Sydney,24.3,1
+Sydney,28.9,1
+Sydney,25.6,2
+Sydney,27.1,2
+Sydney,24.2,2
+Sydney,28.4,2
+Sydney,23.8,3
+Sydney,25.4,3
+Sydney,22.6,3
+Sydney,26.7,3
+Sydney,20.4,4
+Sydney,22.1,4
+Sydney,19.3,4
+Sydney,23.5,4
+Sydney,17.6,5
+Sydney,19.2,5
+Sydney,16.4,5
+Sydney,20.5,5
+Sydney,14.8,6
+Sydney,16.3,6
+Sydney,13.7,6
+Sydney,17.4,6
+Sydney,13.2,7
+Sydney,15.1,7
+Sydney,12.4,7
+Sydney,16.3,7
+Sydney,14.5,8
+Sydney,16.4,8
+Sydney,13.6,8
+Sydney,17.6,8
+Sydney,17.3,9
+Sydney,19.2,9
+Sydney,16.1,9
+Sydney,20.5,9
+Sydney,20.1,10
+Sydney,21.8,10
+Sydney,18.9,10
+Sydney,23.2,10
+Sydney,22.4,11
+Sydney,24.1,11
+Sydney,21.2,11
+Sydney,25.4,11
+Sydney,24.6,12
+Sydney,26.3,12
+Sydney,23.2,12
+Sydney,27.8,12
+Tokyo,4.2,1
+Tokyo,5.8,1
+Tokyo,2.9,1
+Tokyo,7.1,1
+Tokyo,4.8,2
+Tokyo,6.4,2
+Tokyo,3.5,2
+Tokyo,7.9,2
+Tokyo,8.6,3
+Tokyo,10.4,3
+Tokyo,7.3,3
+Tokyo,12.1,3
+Tokyo,14.3,4
+Tokyo,16.8,4
+Tokyo,12.7,4
+Tokyo,18.4,4
+Tokyo,19.6,5
+Tokyo,21.8,5
+Tokyo,18.4,5
+Tokyo,23.4,5
+Tokyo,23.4,6
+Tokyo,25.7,6
+Tokyo,22.1,6
+Tokyo,27.3,6
+Tokyo,29.8,7
+Tokyo,31.6,7
+Tokyo,28.4,7
+Tokyo,33.2,7
+Tokyo,30.6,8
+Tokyo,32.4,8
+Tokyo,29.1,8
+Tokyo,34.1,8
+Tokyo,26.4,9
+Tokyo,28.2,9
+Tokyo,24.8,9
+Tokyo,29.7,9
+Tokyo,20.1,10
+Tokyo,22.4,10
+Tokyo,18.6,10
+Tokyo,24.1,10
+Tokyo,12.8,11
+Tokyo,14.6,11
+Tokyo,11.3,11
+Tokyo,16.2,11
+Tokyo,6.4,12
+Tokyo,8.1,12
+Tokyo,4.9,12
+Tokyo,9.7,12
+Mexico City,13.8,1
+Mexico City,15.4,1
+Mexico City,12.3,1
+Mexico City,16.8,1
+Mexico City,15.2,2
+Mexico City,17.1,2
+Mexico City,13.8,2
+Mexico City,18.5,2
+Mexico City,17.6,3
+Mexico City,19.8,3
+Mexico City,16.2,3
+Mexico City,21.4,3
+Mexico City,19.4,4
+Mexico City,21.8,4
+Mexico City,18.1,4
+Mexico City,23.4,4
+Mexico City,19.8,5
+Mexico City,22.1,5
+Mexico City,18.4,5
+Mexico City,23.7,5
+Mexico City,19.2,6
+Mexico City,21.4,6
+Mexico City,18.0,6
+Mexico City,22.8,6
+Mexico City,18.4,7
+Mexico City,20.6,7
+Mexico City,17.2,7
+Mexico City,21.9,7
+Mexico City,18.1,8
+Mexico City,20.3,8
+Mexico City,17.0,8
+Mexico City,21.6,8
+Mexico City,18.3,9
+Mexico City,20.5,9
+Mexico City,17.2,9
+Mexico City,21.8,9
+Mexico City,17.8,10
+Mexico City,19.9,10
+Mexico City,16.6,10
+Mexico City,21.2,10
+Mexico City,15.4,11
+Mexico City,17.3,11
+Mexico City,14.1,11
+Mexico City,18.7,11
+Mexico City,13.6,12
+Mexico City,15.2,12
+Mexico City,12.4,12
+Mexico City,16.7,12

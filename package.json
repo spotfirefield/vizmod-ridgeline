@@ -1,0 +1,13 @@
+{
+  "name": "spotfire-mods-joyplot",
+  "version": "1.0.0",
+  "description": "Joy Plot (Ridgeline Chart) Spotfire Mod",
+  "scripts": {
+    "start": "pushd \"%INIT_CWD%\" && node dev-server.js",
+    "build": "mods-sdk build"
+  },
+  "devDependencies": {
+    "@spotfire/mods-dev-server": "^1.2.1",
+    "@spotfire/mods-sdk": "^1.1.3"
+  }
+}
