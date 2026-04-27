@@ -1,4 +1,0 @@
-[*.{ts,js,json}]
-indent_style = space
-indent_size = 4
-max_line_length = 120
