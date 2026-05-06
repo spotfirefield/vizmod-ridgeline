@@ -29,14 +29,25 @@ html, body {
   height: 100%;
   overflow: hidden;
   background: transparent;
-  font-family: "Segoe UI", "Roboto", Arial, sans-serif;
-  font-size: 12px;
+  /* Inherit Spotfire's themed font + color when available; fall back to the
+     mod's oil-and-gas palette otherwise. */
+  font-family: var(--sf-font-family, "Segoe UI", "Roboto", Arial, sans-serif);
+  font-size:   var(--sf-font-size, 12px);
+  color:       var(--sf-color, var(--og-text, #c0a878));
 }
 
 #mod-container {
   width: 100%;
   height: 100%;
   position: relative;
+  /* Suppress native text selection across the whole visual. Otherwise a
+     click-and-drag for rubber-band marking also "selects" the SVG axis tick
+     labels and any other text it sweeps over, which makes the page look
+     broken and steals the drag from our handler. Spotfire's own mods do
+     the same (see Donut's donut.scss `user-select: none`). */
+  user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
 }
 
 #joy-plot-svg {
@@ -45,14 +56,152 @@ html, body {
   display: block;
 }
 
+/* ── Trellis grid ─────────────────────────────── */
+:root {
+  /* Trellis chrome follows Spotfire's themed styling. main.js#applyStyling()
+     publishes --sf-bg / --sf-color / --sf-panel-bg / --sf-panel-border for
+     Light + Dark themes; the og-* fallbacks only apply outside Spotfire. */
+  --trellis-border-color: var(--sf-panel-border, var(--og-border, #2a3140));
+  --trellis-title-bg:     var(--sf-panel-bg,     var(--og-surface, #13181f));
+  --trellis-title-color:  var(--sf-color,        var(--og-text, #c0a878));
+}
+
+.trellis-collection {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  overflow: hidden;
+  flex-direction: column; /* default: rows */
+}
+
+.trellis-collection .trellis-panel {
+  display: flex;
+  overflow: hidden;
+  flex: 1;
+}
+
+.trellis-collection .trellis-panel > .title {
+  background: var(--trellis-title-bg);
+  color: var(--trellis-title-color);
+  font-family: var(--sf-font-family, inherit);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  text-align: center;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: none;
+}
+
+.trellis-collection .trellis-panel > .trellis-panel-content {
+  flex: 1 1 auto;
+  position: relative;
+  overflow: hidden;
+}
+
+.trellis-collection .trellis-panel > .trellis-panel-content > svg.joy-plot-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* No-trellis mode: single full-bleed panel, no chrome. Used when the
+   "Trellis by" axis is unmapped — the visual looks identical to the
+   pre-trellis behaviour. */
+.trellis-collection.single {
+  flex-direction: column;
+}
+.trellis-collection.single .trellis-panel {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+}
+.trellis-collection.single .trellis-panel > .title {
+  display: none !important;
+}
+
+/* Trellised: show titles + borders */
+.trellis-collection.trellised {
+  border: 1px solid var(--trellis-border-color);
+}
+.trellis-collection.trellised .trellis-panel > .title { display: block; }
+
+/* Rows mode: stack vertically, title on the right (vertical text) */
+.trellis-collection.rows {
+  flex-direction: column;
+}
+.trellis-collection.rows .trellis-panel {
+  flex-direction: row-reverse;
+  height: var(--panel-height, auto);
+  min-height: var(--panel-height, auto);
+  max-height: var(--panel-height, auto);
+}
+.trellis-collection.trellised.rows .trellis-panel {
+  border-bottom: 1px solid var(--trellis-border-color);
+}
+.trellis-collection.trellised.rows .trellis-panel:last-child { border-bottom: none; }
+.trellis-collection.trellised.rows .trellis-panel > .title {
+  border-left: 1px solid var(--trellis-border-color);
+  writing-mode: vertical-lr;
+}
+
+/* Columns mode: place panels side by side, title on top */
+.trellis-collection.columns {
+  flex-direction: row;
+}
+.trellis-collection.columns .trellis-panel {
+  flex-direction: column;
+  width: var(--panel-width, auto);
+  min-width: var(--panel-width, auto);
+  max-width: var(--panel-width, auto);
+}
+.trellis-collection.trellised.columns .trellis-panel {
+  border-right: 1px solid var(--trellis-border-color);
+}
+.trellis-collection.trellised.columns .trellis-panel:last-child { border-right: none; }
+.trellis-collection.trellised.columns .trellis-panel > .title {
+  border-bottom: 1px solid var(--trellis-border-color);
+}
+
+/* Panels mode: wrap into an approximate sqrt(n) grid */
+.trellis-collection.panels {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.trellis-collection.panels .trellis-panel {
+  flex-direction: column;
+  width: var(--panel-width, auto);
+  min-width: var(--panel-width, auto);
+  max-width: var(--panel-width, auto);
+  height: var(--panel-height, auto);
+  min-height: var(--panel-height, auto);
+  max-height: var(--panel-height, auto);
+}
+.trellis-collection.trellised.panels .trellis-panel {
+  border-right: 1px solid var(--trellis-border-color);
+  border-bottom: 1px solid var(--trellis-border-color);
+}
+.trellis-collection.trellised.panels .trellis-panel.last-of-row { border-right: none; }
+.trellis-collection.trellised.panels .trellis-panel.last-of-column { border-bottom: none; }
+.trellis-collection.trellised.panels .trellis-panel > .title {
+  border-bottom: 1px solid var(--trellis-border-color);
+}
+
 /* ── Settings gear button (top-right) ──────────── */
 #settings-btn {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 24px;
-  height: 24px;
-  padding: 3px;
+  /* Sit centered on the trellis title strip (~22px tall) so the button
+     doesn't hang below the title rectangle into the chart area. */
+  top: 1px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  padding: 2px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -84,24 +233,26 @@ html, body {
   width: 240px;
   max-height: calc(100% - 50px);
   overflow-y: auto;
-  background: rgba(19, 24, 31, 0.98);
-  border: 1px solid var(--og-border, #2a3140);
+  background:    var(--sf-panel-bg, rgba(19, 24, 31, 0.98));
+  border: 1px solid var(--sf-panel-border, var(--og-border, #2a3140));
   border-radius: 4px;
   padding: 10px 12px;
-  color: var(--og-text, #c0a878);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  color: var(--sf-color, var(--og-text, #c0a878));
+  box-shadow: var(--sf-panel-shadow, 0 4px 16px rgba(0, 0, 0, 0.6));
   z-index: 20;
   font-size: 11px;
+  font-family: var(--sf-font-family, inherit);
 }
 #settings-panel.hidden { display: none; }
 #settings-panel h4 {
   margin: 8px 0 4px 0;
   font-size: 10px;
   font-weight: 700;
-  color: var(--og-text-muted, #6a7a6a);
+  color: var(--sf-color, var(--og-text-muted, #6a7a6a));
+  opacity: 0.7;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  border-bottom: 1px solid var(--og-border, #2a3140);
+  border-bottom: 1px solid var(--sf-panel-border, var(--og-border, #2a3140));
   padding-bottom: 3px;
 }
 #settings-panel h4:first-child { margin-top: 0; }
@@ -134,28 +285,56 @@ html, body {
   accent-color: var(--og-amber, #c8862a);
 }
 
-/* ── Axes & Labels ─────────────────────────────── */
-.axis text {
-  fill: var(--og-text, #c0a878);
+/* <select> needs explicit colors. The native control inherits the panel's
+   light text color but its background defaults to the OS theme (white on
+   Windows), making text invisible in Dark mode. Pin both color + background
+   to a guaranteed-contrast pair. The `option` rule covers the dropdown list
+   that the browser pops up — those options DON'T inherit from <select> in
+   Chromium, they fall back to system colors. */
+#settings-panel select {
+  background: var(--sf-panel-bg, #1a1f28);
+  color:      var(--sf-color, #e6e6e6);
+  border: 1px solid var(--sf-panel-border, var(--og-border, #2a3140));
+  border-radius: 3px;
+  padding: 2px 4px;
   font-size: 11px;
+  font-family: inherit;
+  min-width: 120px;
+}
+#settings-panel select option {
+  background: var(--sf-panel-bg, #1a1f28);
+  color:      var(--sf-color, #e6e6e6);
+}
+
+/* ── Axes & Labels ─────────────────────────────── */
+/* All scale styling pulls from Spotfire's theme via CSS variables set in
+   main.js#applyStyling(); the oil-gas palette remains the fallback. */
+.axis text {
+  fill: var(--sf-scale-color, var(--og-text, #c0a878));
+  font-family: var(--sf-scale-font-family, var(--sf-font-family, inherit));
+  font-size:   var(--sf-scale-font-size, 11px);
+  font-weight: var(--sf-scale-font-weight, 400);
   letter-spacing: 0.02em;
 }
 
-.axis line,
+.axis line {
+  stroke: var(--sf-scale-tick, var(--og-border, #2a3140));
+}
 .axis path {
-  stroke: var(--og-border, #2a3140);
+  stroke: var(--sf-scale-line, var(--og-border, #2a3140));
 }
 
 .axis--x .domain {
-  stroke: var(--og-steel, #4a6070);
+  stroke: var(--sf-scale-line, var(--og-steel, #4a6070));
 }
 
 .y-label {
-  font-size: 11px;
+  font-family: var(--sf-scale-font-family, var(--sf-font-family, inherit));
+  font-size:   var(--sf-scale-font-size, 11px);
   font-weight: 700;
   dominant-baseline: middle;
   text-anchor: end;
-  fill: #000;
+  fill: var(--sf-scale-color, var(--og-text, #c0a878));
   cursor: default;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -164,7 +343,7 @@ html, body {
 .x-axis-title,
 .chart-title {
   font-size: 12px;
-  fill: var(--og-text-muted, #6a7a6a);
+  fill: var(--sf-scale-color, var(--og-text-muted, #6a7a6a));
   text-anchor: middle;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -194,12 +373,21 @@ html, body {
 }
 
 /* ── Marking overlay ───────────────────────────── */
+/* Match Spotfire's native rubber-band marking rectangle:
+   - 1px solid #677085 border (light theme) / #222C40 (dark theme)
+   - rgba(141, 173, 223, 0.5) translucent blue fill
+   No dash, no animation, no theme-aware coloring — Spotfire keeps the
+   marking color identical across themes for muscle-memory consistency. */
 .marking-rect {
-  fill: var(--og-mark, rgba(200,134,42,0.18));
-  stroke: var(--og-mark-stroke, rgba(232,168,64,0.7));
+  fill: rgba(141, 173, 223, 0.5);
+  stroke: #677085;
   stroke-width: 1;
-  stroke-dasharray: 4 3;
   pointer-events: none;
+  shape-rendering: crispEdges;
+}
+.sf-dark .marking-rect,
+[data-sf-theme="dark"] .marking-rect {
+  stroke: #222C40;
 }
 
 /* ── Tooltip ───────────────────────────────────── */
@@ -256,27 +444,20 @@ html, body {
 
 /* ── Empty / error state ───────────────────────── */
 .empty-state {
-  fill: #6a7a6a;
+  fill: var(--sf-color, var(--og-text-muted, #6a7a6a));
   font-size: 13px;
   text-anchor: middle;
   dominant-baseline: middle;
   letter-spacing: 0.05em;
 }
 
-/* ── Legend ────────────────────────────────────── */
+/* ── Legend ────────────────────────────────── */
 .legend-item text {
   font-size: 11px;
-  fill: var(--og-text, #c0a878);
+  fill: var(--sf-scale-color, var(--og-text, #c0a878));
   dominant-baseline: middle;
   letter-spacing: 0.03em;
 }
 
-/* Rubber-band marking rectangle */
-.marking-rect {
-  fill: rgba(232, 168, 64, 0.12);
-  stroke: #e8a840;
-  stroke-width: 1;
-  stroke-dasharray: 4 3;
-  pointer-events: none;
-}
+/* Rubber-band marking rectangle — overridden by the canonical rule above. */
 

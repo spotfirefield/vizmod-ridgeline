@@ -6,9 +6,8 @@
   "icon": "icon.svg",
   "files": [
     "index.html",
-    "src/main.js",
-    "src/styles.css",
-    "vendor.min.js"
+    "build/main.js",
+    "src/styles.css"
   ],
   "properties": [
     {
@@ -65,6 +64,16 @@
       "name": "showQuartiles",
       "type": "boolean",
       "defaultValue": false
+    },
+    {
+      "name": "sortBy",
+      "type": "string",
+      "defaultValue": "value"
+    },
+    {
+      "name": "trellisMode",
+      "type": "string",
+      "defaultValue": "rows"
     }
   ],
   "dataViewDefinition": {
@@ -77,21 +86,30 @@
     },
     "axes": [
       {
-        "name": "X",
+        "name": "Value",
         "mode": "continuous",
         "placement": "bottom",
         "dropTarget": {
           "icon": "XAxis3D",
-          "description": "Distribution value on X axis: {0}"
+          "description": "Distribution value: {0}"
         }
       },
       {
-        "name": "Y",
+        "name": "Category",
         "mode": "categorical",
         "placement": "left",
         "dropTarget": {
           "icon": "YAxis3D",
           "description": "Group ridges by {0}"
+        }
+      },
+      {
+        "name": "Trellis by",
+        "mode": "categorical",
+        "placement": "none",
+        "dropTarget": {
+          "icon": "TrellisPanels",
+          "description": "Split into panels by {0}"
         }
       },
       {

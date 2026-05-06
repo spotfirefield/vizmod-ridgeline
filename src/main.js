@@ -2,11 +2,97 @@
 
 "use strict";
 
+// Bundled by webpack — d3 is declared as a dependency in package.json.
+// We bind it to a `viz` alias to keep call-sites short and to preserve the
+// historical naming used throughout this file.
+import * as viz from "d3";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Entry point
 // ─────────────────────────────────────────────────────────────────────────────
 Spotfire.initialize(async (mod) => {
   const context = mod.getRenderContext();
+
+  // Push Spotfire's themed styling onto the document as CSS variables so
+  // stylesheet rules and runtime SVG attributes can reference one source
+  // of truth. Re-applied on every render in case the user toggles theme.
+  function applyStyling() {
+    const s = context && context.styling;
+    if (!s) return null;
+    const root = document.documentElement;
+    const set = (k, v) => { if (v != null) root.style.setProperty(k, String(v)); };
+
+    // General — body text + background
+    set("--sf-font-family", s.general.font.fontFamily);
+    set("--sf-font-size",   s.general.font.fontSize + "px");
+    set("--sf-font-weight", s.general.font.fontWeight);
+    set("--sf-font-style",  s.general.font.fontStyle);
+    set("--sf-color",       s.general.font.color);
+    set("--sf-bg",          s.general.backgroundColor);
+
+    // Scales — axis labels, lines, ticks
+    set("--sf-scale-font-family", s.scales.font.fontFamily);
+    set("--sf-scale-font-size",   s.scales.font.fontSize + "px");
+    set("--sf-scale-font-weight", s.scales.font.fontWeight);
+    set("--sf-scale-color",       s.scales.font.color);
+    set("--sf-scale-line",        s.scales.line.stroke);
+    set("--sf-scale-tick",        s.scales.tick.stroke);
+
+    // Derive a panel surface + border that contrast slightly with the
+    // visual's background, so the settings popup is legible in both Light
+    // and Dark themes (Spotfire only exposes the general bg + text colors).
+    const bg = parseCssColor(s.general.backgroundColor);
+    if (bg) {
+      const lum = relativeLuminance(bg);
+      const isDark = lum < 0.5;
+      // Panel sits ~6% darker (light theme) or ~10% lighter (dark theme).
+      const panel  = isDark ? mixWithWhite(bg, 0.10) : mixWithBlack(bg, 0.06);
+      const border = isDark ? mixWithWhite(bg, 0.22) : mixWithBlack(bg, 0.18);
+      set("--sf-panel-bg",     `rgba(${panel.r},${panel.g},${panel.b},0.98)`);
+      set("--sf-panel-border", `rgb(${border.r},${border.g},${border.b})`);
+      set("--sf-panel-shadow", isDark
+        ? "0 4px 16px rgba(0,0,0,0.6)"
+        : "0 4px 16px rgba(0,0,0,0.18)");
+      // Tag the document so theme-aware CSS rules (e.g. the marking-rect
+      // border color, which Spotfire's native chart darkens in dark mode)
+      // can target either theme without re-reading colors in CSS.
+      document.documentElement.setAttribute("data-sf-theme", isDark ? "dark" : "light");
+    }
+
+    return s;
+  }
+
+  // ── Tiny color helpers (kept inline so the mod has no extra deps) ────────
+  function parseCssColor(c) {
+    if (!c || typeof c !== "string") return null;
+    const s = c.trim();
+    let m = s.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (m) {
+      let h = m[1];
+      if (h.length === 3) h = h.split("").map((x) => x + x).join("");
+      return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
+    }
+    m = s.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+    if (m) return { r: +m[1], g: +m[2], b: +m[3] };
+    return null;
+  }
+  function relativeLuminance({ r, g, b }) {
+    const norm = (v) => {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * norm(r) + 0.7152 * norm(g) + 0.0722 * norm(b);
+  }
+  const mixWithWhite = ({ r, g, b }, t) => ({
+    r: Math.round(r + (255 - r) * t),
+    g: Math.round(g + (255 - g) * t),
+    b: Math.round(b + (255 - b) * t),
+  });
+  const mixWithBlack = ({ r, g, b }, t) => ({
+    r: Math.round(r * (1 - t)),
+    g: Math.round(g * (1 - t)),
+    b: Math.round(b * (1 - t)),
+  });
 
   // ── Persistent mod state ─────────────────────────────────────────────────
   const state = {
@@ -20,10 +106,11 @@ Spotfire.initialize(async (mod) => {
 
   // ── Subscribe to everything that can trigger a re-render ─────────────────
   const reader = mod.createReader(
-    mod.visualization.axis("X"),
-    mod.visualization.axis("Y"),
+    mod.visualization.axis("Value"),
+    mod.visualization.axis("Category"),
     mod.visualization.axis("Color"),
     mod.visualization.axis("MarkerBy"),
+    mod.visualization.axis("Trellis by"),
     mod.visualization.data(),
     mod.property("ridgeMode"),
     mod.property("overlapFactor"),
@@ -36,10 +123,22 @@ Spotfire.initialize(async (mod) => {
     mod.property("showMean"),
     mod.property("showMedian"),
     mod.property("showQuartiles"),
+    mod.property("sortBy"),
+    mod.property("trellisMode"),
     mod.windowSize(),
   );
 
-  reader.subscribe(render);
+  // Wrap render in a guard so a thrown exception surfaces in the visual
+  // (and to the host) instead of leaving a blank canvas behind.
+  reader.subscribe(async (...args) => {
+    try {
+      await render(...args);
+    } catch (err) {
+      console.error("[JoyPlot] render() threw", err);
+      try { showError(String(err && err.stack ? err.stack : err)); } catch {}
+      try { mod.controls.errorOverlay.show(String(err && err.message ? err.message : err)); } catch {}
+    }
+  });
 
   // ─────────────────────────────────────────────────────────────────────────
   // Settings panel — gear button toggles a custom HTML panel
@@ -83,6 +182,21 @@ Spotfire.initialize(async (mod) => {
       ${radio("both", "Both")}
 
       <h4>Layout</h4>
+      <label>
+        <span class="lbl-text">Sort by</span>
+        <select data-prop="sortBy" style="background:transparent;color:inherit;border:1px solid var(--sf-panel-border, #2a3140);border-radius:3px;padding:1px 4px;">
+          <option value="value"    ${v.sortBy === "value"    ? "selected" : ""}>Value (leftmost at bottom)</option>
+          <option value="category" ${v.sortBy === "category" ? "selected" : ""}>Category order</option>
+        </select>
+      </label>
+      <label>
+        <span class="lbl-text">Trellis layout</span>
+        <select data-prop="trellisMode" style="background:transparent;color:inherit;border:1px solid var(--sf-panel-border, #2a3140);border-radius:3px;padding:1px 4px;">
+          <option value="rows"    ${v.trellisMode === "rows"    ? "selected" : ""}>Rows</option>
+          <option value="columns" ${v.trellisMode === "columns" ? "selected" : ""}>Columns</option>
+          <option value="panels"  ${v.trellisMode === "panels"  ? "selected" : ""}>Panels (grid)</option>
+        </select>
+      </label>
       ${range("overlapFactor", "Overlap",      0.5, 5,   0.1,  v.overlapFactor, (x) => Number(x).toFixed(1))}
       ${range("fillOpacity",   "Fill opacity", 0,   1,   0.05, v.fillOpacity,   (x) => Number(x).toFixed(2))}
       ${range("strokeWidth",   "Stroke width", 0.5, 5,   0.1,  v.strokeWidth,   (x) => Number(x).toFixed(1))}
@@ -145,6 +259,13 @@ Spotfire.initialize(async (mod) => {
         if (el.checked) props.ridgeMode.set(el.value);
       });
     });
+
+    // Wire <select> dropdowns
+    panel.querySelectorAll('select[data-prop]').forEach((el) => {
+      el.addEventListener("change", () => {
+        props[el.dataset.prop].set(el.value);
+      });
+    });
   }
 
   async function toggleSettings() {
@@ -179,11 +300,11 @@ Spotfire.initialize(async (mod) => {
   // Main render function
   // ─────────────────────────────────────────────────────────────────────────
   async function render(
-    xAxis, yAxis, colorAxis, markerByAxis,
+    xAxis, yAxis, colorAxis, markerByAxis, trellisAxis,
     dataView,
     ridgeModeP, overlapFactorP, bandwidthP, histBinsP,
     fillOpacityP, strokeWidthP, showDataPointsP, ridge3DP,
-    showMeanP, showMedianP, showQuartilesP,
+    showMeanP, showMedianP, showQuartilesP, sortByP, trellisModeP,
     windowSize,
   ) {
     // Capture properties so the settings panel can read/write them.
@@ -199,7 +320,15 @@ Spotfire.initialize(async (mod) => {
       showMean:       showMeanP,
       showMedian:     showMedianP,
       showQuartiles:  showQuartilesP,
+      sortBy:         sortByP,
+      trellisMode:    trellisModeP,
     };
+
+    // Push Spotfire theme → CSS variables (recomputed each render so a
+    // theme change in the host immediately re-themes the visual).
+    const styling = applyStyling();
+    const themeText = (styling && styling.scales.font.color) || "#c0a878";
+    const themeScaleLine = (styling && styling.scales.line.stroke) || "#2a3140";
     // ── Diagnostics ─────────────────────────────────────────────────────────
     console.log("[JoyPlot] render called", {
       xAxis: xAxis && { name: xAxis.name, expression: xAxis.expression, isMapped: xAxis.isMapped },
@@ -207,11 +336,6 @@ Spotfire.initialize(async (mod) => {
       markerByAxis: markerByAxis && { name: markerByAxis.name, expression: markerByAxis.expression, isMapped: markerByAxis.isMapped },
       window: windowSize,
     });
-
-    // Always size the SVG so the diagnostic text below is visible.
-    viz.select("#joy-plot-svg")
-      .attr("width", windowSize.width)
-      .attr("height", windowSize.height);
 
     // ── Auto-disable aggregation ────────────────────────────────────────────
     // Spotfire forces Sum()/aggregation on continuous axes whenever the data
@@ -232,12 +356,12 @@ Spotfire.initialize(async (mod) => {
     const xMapped = !!(xAxis && (xAxis.expression || (xAxis.parts && xAxis.parts.length)));
     const yMapped = !!(yAxis && (yAxis.expression || (yAxis.parts && yAxis.parts.length)));
     if (!xMapped) {
-      showEmpty("Drop a numeric column on the X axis.");
+      showEmpty("Drop a numeric column on the Value axis.");
       context.signalRenderComplete();
       return;
     }
     if (!yMapped) {
-      showEmpty("Drop a categorical column on the Y axis.");
+      showEmpty("Drop a categorical column on the Category axis.");
       context.signalRenderComplete();
       return;
     }
@@ -262,6 +386,7 @@ Spotfire.initialize(async (mod) => {
     const showMean     = showMeanP.value() ?? false;
     const showMedian   = showMedianP.value() ?? false;
     const showQuartiles = showQuartilesP.value() ?? false;
+    const sortBy        = sortByP.value() ?? "value";    // "value" | "category"
 
     // ── Read rows ────────────────────────────────────────────────────────────
     let allRows;
@@ -289,20 +414,44 @@ Spotfire.initialize(async (mod) => {
     let firstSample = null;
     const colorMapped = !!(colorAxis && (colorAxis.expression || (colorAxis.parts && colorAxis.parts.length)));
     const colorIsContinuous = colorMapped && colorAxis.isCategorical === false;
+
+    // Detect whether the user has dropped a column on the "Trellis by" axis.
+    // Spotfire's axis-property checks (.expression / .parts) can report
+    // truthy values even for an empty axis, so we use the dataView hierarchy
+    // (the same approach as the Donut mod) as the source of truth. We then
+    // probe one row to confirm a categorical("Trellis by") value can actually
+    // be read — if not, treat the axis as unmapped and skip trellising.
+    let trellisMapped = false;
+    try {
+      const h = await dataView.hierarchy("Trellis by");
+      trellisMapped = !!(h && h.isEmpty === false);
+    } catch (_) { trellisMapped = false; }
+    if (trellisMapped && allRows.length > 0) {
+      try {
+        const probe = allRows[0].categorical("Trellis by");
+        if (!probe || probe.formattedValue == null) trellisMapped = false;
+      } catch (_) { trellisMapped = false; }
+    }
+    console.log("[JoyPlot] trellisMapped =", trellisMapped);
+
     const rows = allRows.map((row, i) => {
       try {
-        const xRaw = row.continuous("X").value();
+        const xRaw = row.continuous("Value").value();
         const xNum = xRaw === null || xRaw === undefined ? null : Number(xRaw);
         let colorVal = null;
         if (colorIsContinuous) {
           try { colorVal = row.continuous("Color").value(); } catch (_) { colorVal = null; }
+        }
+        let trellisKey = null;
+        if (trellisMapped) {
+          try { trellisKey = String(row.categorical("Trellis by").formattedValue()); } catch (_) { trellisKey = null; }
         }
         const sample = {
           rowId:    row.elementId(),
           xRaw,
           xNum,
           xType:    typeof xRaw,
-          yVal:     String(row.categorical("Y").formattedValue()),
+          yVal:     String(row.categorical("Category").formattedValue()),
           color:    row.color().hexCode,
           marked:   row.isMarked(),
         };
@@ -312,6 +461,7 @@ Spotfire.initialize(async (mod) => {
           row,                       // keep DataViewRow reference for marking
           xVal:     Number.isFinite(xNum) ? xNum : null,
           yVal:     sample.yVal,
+          trellisKey,
           colorVal,
           color:    sample.color,
           marked:   sample.marked,
@@ -338,21 +488,12 @@ Spotfire.initialize(async (mod) => {
       return;
     }
 
-    // ── Group by Y ───────────────────────────────────────────────────────────
-    const grouped = viz.group(rows, (r) => r.yVal);
-    // Preserve order of first appearance (or sort if all numeric)
-    const yKeys = [...grouped.keys()];
-    const allNumericY = yKeys.every((k) => !isNaN(Number(k)));
-    if (allNumericY) yKeys.sort((a, b) => Number(a) - Number(b));
-
-    // ── Aggregation sanity check ─────────────────────────────────────────────
-    // If every group has at most one unique X value, the data is almost
-    // certainly being aggregated by Spotfire. Show a friendly hint instead
-    // of drawing a single useless dot per ridge.
-    const groupsLookAggregated = yKeys.every((k) => {
-      const groupRows = grouped.get(k);
-      if (!groupRows || groupRows.length <= 1) return true;
-      const uniq = new Set(groupRows.map((r) => r.xVal));
+    // ── Aggregation sanity check (global) ───────────────────────────────────
+    const yKeysGlobal = [...viz.group(rows, (r) => r.yVal).keys()];
+    const groupsLookAggregated = yKeysGlobal.every((k) => {
+      const grp = rows.filter((r) => r.yVal === k);
+      if (!grp || grp.length <= 1) return true;
+      const uniq = new Set(grp.map((r) => r.xVal));
       return uniq.size <= 1;
     });
     if (groupsLookAggregated) {
@@ -365,12 +506,219 @@ Spotfire.initialize(async (mod) => {
       return;
     }
 
+    // Shared X domain across all trellis panels for visual comparability.
     const xExtent = viz.extent(rows, (r) => r.xVal);
 
+    // ── Trellis orchestration ───────────────────────────────────────────────
+    const trellisMode = (trellisModeP.value() || "rows").toLowerCase();
+
+    // Final guard: even if the API reported the trellis axis as mapped, an
+    // unmapped axis often surfaces as a single trellisKey that is null,
+    // empty, or literally "(Empty)" — in that case there's only one panel's
+    // worth of data, so render it without trellis chrome.
+    if (trellisMapped) {
+      const distinctKeys = new Set(rows.map((r) => r.trellisKey));
+      const onlyEmpty =
+        distinctKeys.size === 0 ||
+        (distinctKeys.size === 1 && (() => {
+          const k = distinctKeys.values().next().value;
+          return k == null || k === "" || /^\(empty\)$/i.test(String(k).trim());
+        })());
+      if (onlyEmpty) trellisMapped = false;
+    }
+
+    // Build leaves: one per unique trellis key, or a single anonymous leaf
+    // when the Trellis-by axis isn't mapped.
+    const leafGrouped = trellisMapped
+      ? viz.group(rows, (r) => r.trellisKey == null ? "(empty)" : r.trellisKey)
+      : new Map([[null, rows]]);
+
+    const leaves = [];
+    for (const [key, leafRows] of leafGrouped) {
+      leaves.push({
+        id:    key == null ? "/null" : "/" + String(key).replace(/[^a-zA-Z0-9_-]/g, "_"),
+        label: key,
+        rows:  leafRows,
+      });
+    }
+    // Sort: numeric ascending if all numeric, else alphabetical.
+    leaves.sort((a, b) => {
+      const va = a.label, vb = b.label;
+      if (va == null && vb == null) return 0;
+      if (va == null) return -1;
+      if (vb == null) return 1;
+      const na = Number(va), nb = Number(vb);
+      const aNum = !isNaN(na) && va !== "";
+      const bNum = !isNaN(nb) && vb !== "";
+      if (aNum && bNum) return na - nb;
+      if (aNum) return -1;
+      if (bNum) return 1;
+      return String(va).localeCompare(String(vb));
+    });
+
+    // Build / refresh the trellis grid DOM. When the Trellis-by axis isn't
+    // mapped, we render a single full-bleed panel with NO trellis chrome
+    // (no border, no title, no mode-specific sizing) so the visual looks
+    // identical to the pre-trellis behaviour.
+    const collection = viz.select("#trellis-collection");
+    collection.selectAll("*").remove();
+    if (trellisMapped) {
+      collection.attr("class", "trellis-collection trellised " + trellisMode);
+    } else {
+      collection.attr("class", "trellis-collection single");
+    }
+
+    const collRect = collection.node().getBoundingClientRect();
+    const collW = collRect.width  || windowSize.width;
+    const collH = collRect.height || windowSize.height;
+    const leafCount = leaves.length;
+
+    // Compute panel sizes per trellis mode (only when actually trellised).
+    let panelW = "auto", panelH = "auto";
+    let gridCols = 1, gridRows = leafCount;
+    if (trellisMapped) {
+      if (trellisMode === "rows") {
+        panelH = ((collH - (leafCount + 1)) / leafCount) + "px";
+      } else if (trellisMode === "columns") {
+        panelW = ((collW - (leafCount + 1)) / leafCount) + "px";
+      } else if (trellisMode === "panels") {
+        gridRows = Math.max(1, Math.ceil(Math.sqrt(leafCount)));
+        gridCols = Math.max(1, Math.ceil(leafCount / gridRows));
+        panelW = ((collW - (gridCols + 2)) / gridCols) + "px";
+        panelH = ((collH - (gridRows + 2)) / gridRows) + "px";
+      }
+    }
+
+    // Create panel DOM
+    leaves.forEach((leaf, idx) => {
+      const panelEl = collection.append("div").attr("class", "trellis-panel");
+      if (trellisMapped) {
+        panelEl.style("--panel-width",  panelW);
+        panelEl.style("--panel-height", panelH);
+        if (trellisMode === "panels") {
+          if ((idx + 1) % gridCols === 0)            panelEl.classed("last-of-row", true);
+          if (idx >= (gridRows - 1) * gridCols)      panelEl.classed("last-of-column", true);
+        }
+      }
+      panelEl.append("div")
+        .attr("class", "title")
+        .text(leaf.label == null ? "" : String(leaf.label));
+      panelEl.append("div")
+        .attr("class", "trellis-panel-content")
+        .attr("data-trellis-id", leaf.id)
+        .append("svg").attr("class", "joy-plot-svg");
+    });
+
+    // Render each panel against its measured size
+    const anyMarked = rows.some((r) => r.marked);
+
+    // ── Global density normalization (Option C) ─────────────────────────────
+    // Compute one shared peak density across every (panel, category) group
+    // so the per-panel kdeYScale / histYScale below all map [0, globalMax]
+    // → [0, ridgeH]. Without this, each ridge is rescaled to its own peak,
+    // making heights non-comparable both within and across trellis panels.
+    //
+    // The thresholds used for the global pre-pass mirror what renderPanel()
+    // uses: a 120-tick grid over the shared X domain (padded by 5%, same as
+    // the panel xScale below). Recomputing KDE in the panel itself is cheap
+    // and keeps the rendering path unchanged.
+    const padFactor = 0.05;
+    const sharedXMin = xExtent[0] - (xExtent[1] - xExtent[0]) * padFactor;
+    const sharedXMax = xExtent[1] + (xExtent[1] - xExtent[0]) * padFactor;
+    const sharedThresholds = viz.scaleLinear()
+      .domain([sharedXMin, sharedXMax])
+      .ticks(120);
+    // Bin thresholds are coarser (driven by the histBins property).
+    const sharedHistThresholds = viz.scaleLinear()
+      .domain([sharedXMin, sharedXMax])
+      .ticks(histBins);
+
+    let globalMaxKDE  = 0;
+    let globalMaxHist = 0;
+    leaves.forEach((leaf) => {
+      const groupedLeaf = viz.group(leaf.rows, (r) => r.yVal);
+      for (const [, gRows] of groupedLeaf) {
+        const xs = gRows.map((r) => r.xVal).filter(Number.isFinite);
+        if (xs.length === 0) continue;
+        const bw = bwOverride > 0 ? bwOverride : silvermanBandwidth(xs);
+        const kde = computeKDE(xs, sharedThresholds, bw);
+        const m = viz.max(kde, (p) => p[1]) || 0;
+        if (m > globalMaxKDE) globalMaxKDE = m;
+        if (ridgeMode === "histogram" || ridgeMode === "both") {
+          const hist = viz.bin().value((r) => r.xVal)
+            .domain([sharedXMin, sharedXMax])
+            .thresholds(sharedHistThresholds)(gRows);
+          const h = viz.max(hist, (b) => b.length) || 0;
+          if (h > globalMaxHist) globalMaxHist = h;
+        }
+      }
+    });
+    if (globalMaxKDE  === 0) globalMaxKDE  = 1;
+    if (globalMaxHist === 0) globalMaxHist = 1;
+
+    const panelCtx = {
+      ridgeMode, overlapFactor, bwOverride, histBins, fillOpacity, strokeWidth,
+      showPoints, ridge3D, showMean, showMedian, showQuartiles, sortBy,
+      xExtent, anyMarked, themeText, themeScaleLine, dataView, markerByAxis,
+      globalMaxKDE, globalMaxHist,
+    };
+    leaves.forEach((leaf) => {
+      const contentEl = collection.select(`[data-trellis-id="${leaf.id}"]`);
+      if (contentEl.empty()) return;
+      const svgSel = contentEl.select("svg.joy-plot-svg");
+      const rect = contentEl.node().getBoundingClientRect();
+      const W = Math.max(50, Math.floor(rect.width));
+      const H = Math.max(50, Math.floor(rect.height));
+      svgSel.attr("width", W).attr("height", H);
+      renderPanel(svgSel, leaf.rows, W, H, panelCtx);
+    });
+
+    context.signalRenderComplete();
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Per-panel chart renderer (called once per trellis leaf by render()).
+  // Renders the full ridge/joy chart inside the supplied <svg>, against the
+  // supplied subset of rows and panel dimensions. xExtent (from ctx) is the
+  // shared X domain so all trellis panels align horizontally.
+  // ───────────────────────────────────────────────────────────────────────────
+  function renderPanel(svg, rows, W, H, ctx) {
+    const {
+      ridgeMode, overlapFactor, bwOverride, histBins, fillOpacity, strokeWidth,
+      showPoints, ridge3D, showMean, showMedian, showQuartiles, sortBy,
+      xExtent, anyMarked, themeText, dataView,
+      globalMaxKDE, globalMaxHist,
+    } = ctx;
+
+    // ── Per-panel grouping by Category ──────────────────────────────────────
+    const grouped = viz.group(rows, (r) => r.yVal);
+    const yKeys = [...grouped.keys()];
+
+    // Order ridges per the user's chosen mode.
+    //   "value":    sort by each group's median X so the group with the
+    //               smallest ("leftmost") distribution ends up at the BOTTOM
+    //               of the panel. yScale.range() maps yKeys[0] → top and
+    //               yKeys[last] → bottom, so we sort descending by median.
+    //   "category": preserve incoming category order (Spotfire's order),
+    //               but if all keys parse as numbers, sort numerically.
+    if (sortBy === "value") {
+      const medianByKey = new Map();
+      for (const k of yKeys) {
+        const xs = (grouped.get(k) || []).map((r) => r.xVal).filter(Number.isFinite);
+        medianByKey.set(k, xs.length ? viz.median(xs) : Infinity);
+      }
+      // Descending by median → smallest median ends up last → rendered at bottom.
+      yKeys.sort((a, b) => medianByKey.get(b) - medianByKey.get(a));
+    } else {
+      const allNumericY = yKeys.every((k) => !isNaN(Number(k)));
+      if (allNumericY) yKeys.sort((a, b) => Number(a) - Number(b));
+    }
+    if (yKeys.length === 0) return;
+
     // ── Layout ───────────────────────────────────────────────────────────────
-    const W = windowSize.width;
-    const H = windowSize.height;
-    const margin = { top: 30, right: 30, bottom: 24, left: 90 };
+    // Use a smaller left margin when the panel is narrow (trellised columns).
+    const leftMargin = Math.min(90, Math.max(40, W * 0.18));
+    const margin = { top: 24, right: 16, bottom: 22, left: leftMargin };
     const innerW = W - margin.left - margin.right;
     const innerH = H - margin.top - margin.bottom;
 
@@ -385,16 +733,23 @@ Spotfire.initialize(async (mod) => {
                xExtent[1] + (xExtent[1] - xExtent[0]) * 0.05])
       .range([0, innerW]);
 
-    // yScale: maps each group key to its baseline y position (bottom of ridge).
-    // Bottom baseline sits on the x-axis; top baseline leaves enough headroom
-    // for the tallest ridge peak (ridgeH).
+    // yScale: scalePoint distributes baselines evenly between range[0] and
+    // range[1]. Every non-top ridge gets `step` px of vertical room above
+    // it (the gap between consecutive baselines). The TOP ridge only gets
+    // `range[0]` px above it. To make the top ridge's headroom match the
+    // gap between every other pair, solve:
+    //     range[0] == step == (range[1] - range[0]) / (n - 1)
+    //   ⇒ range[0] = (innerH - bottomPad) / n
+    // That gives the topmost ridge the same vertical breathing room as
+    // every other ridge — no more "extra empty band on top".
+    const bottomPad = 4;
+    const topPad = (innerH - bottomPad) / nGroups;
     const yScale = viz.scalePoint()
       .domain(yKeys)
-      .range([Math.min(ridgeH, innerH * 0.5), innerH - 4])
+      .range([topPad, innerH - bottomPad])
       .padding(0);
 
     // ── SVG setup ─────────────────────────────────────────────────────────────
-    const svg = viz.select("#joy-plot-svg");
     svg.selectAll("*").remove();
     svg.attr("width", W).attr("height", H);
 
@@ -409,10 +764,17 @@ Spotfire.initialize(async (mod) => {
     // (highlight) through the base color to a darker bottom (shaded base),
     // which together with the shadow gives ridges a "3D" feel.
     const defs = svg.append("defs");
+    // Each panel has its own SVG so we use a stable, panel-local shadow id.
+    // (D3 randomness avoided to keep output deterministic for tests.)
+    const shadowId = "ridge-shadow-" + Math.abs(
+      (svg.attr("data-panel-id") || ("p" + Math.random().toString(36).slice(2, 9)))
+        .split("").reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)
+    );
+    svg.attr("data-shadow-id", shadowId);
     if (ridge3D) {
       // Stronger drop shadow — gives ridges real lift off the background.
       const shadow = defs.append("filter")
-        .attr("id", "ridge-shadow")
+        .attr("id", shadowId)
         .attr("x", "-30%").attr("y", "-30%")
         .attr("width", "160%").attr("height", "200%");
       shadow.append("feGaussianBlur").attr("in", "SourceAlpha").attr("stdDeviation", 4);
@@ -471,14 +833,16 @@ Spotfire.initialize(async (mod) => {
           .attr("stroke-dasharray", "4,4");
       });
 
-    // Detect whether any rows are marked anywhere in the view. When true,
-    // Spotfire convention is to fade everything that is *not* marked and
-    // overlay the marked subset at full intensity.
-    const anyMarked = rows.some((r) => r.marked);
+    // (anyMarked is supplied by the orchestrator so all panels stay in
+    // visual lock-step — marking in one panel fades unmarked ridges in all.)
 
-    // ── Draw ridges (back-to-front: last group = bottom) ─────────────────────
-    // We draw in reverse so earlier groups (top) appear on top of later ones
-    const drawOrder = [...yKeys].reverse();
+    // ── Draw ridges (back-to-front by visible baseline Y) ───────────────────
+    // SVG paints later siblings on top of earlier ones. Sort the draw order
+    // by baseline Y ascending so the visually-lowest ridge is painted LAST
+    // and therefore overlaps every ridge above it. This is independent of
+    // how `yKeys` happens to be ordered (alphabetical, numeric, Spotfire
+    // hierarchy, etc.) — it always tracks the on-screen position.
+    const drawOrder = [...yKeys].sort((a, b) => yScale(a) - yScale(b));
 
     drawOrder.forEach((yKey) => {
       const groupRows = grouped.get(yKey);
@@ -508,14 +872,24 @@ Spotfire.initialize(async (mod) => {
       const bins = histogram(groupRows);
       const maxHist = viz.max(bins, (b) => b.length) || 1;
 
-      // ── Local density scale ────────────────────────────────────────────────
-      const kdeYScale  = viz.scaleLinear().domain([0, maxKDE]).range([0, ridgeH]);
-      const histYScale = viz.scaleLinear().domain([0, maxHist]).range([0, ridgeH]);
+      // ── Density scale ──────────────────────────────────────────────────────
+      // Use the GLOBAL maxes (computed in render() across every panel and
+      // every category) so a ridge with twice the density is visually twice
+      // as tall — both within this panel AND across trellis panels.
+      // Falls back to the per-group max if the orchestrator didn't supply
+      // a global value (defensive only).
+      const kdeDomain  = globalMaxKDE  > 0 ? globalMaxKDE  : maxKDE;
+      const histDomain = globalMaxHist > 0 ? globalMaxHist : maxHist;
+      const kdeYScale  = viz.scaleLinear().domain([0, kdeDomain]).range([0, ridgeH]).clamp(true);
+      const histYScale = viz.scaleLinear().domain([0, histDomain]).range([0, ridgeH]).clamp(true);
 
       const ridgeGroup = g.append("g")
         .attr("class", "ridge-group")
         .attr("data-key", yKey);
-      if (ridge3D) ridgeGroup.attr("filter", "url(#ridge-shadow)");
+      if (ridge3D) {
+        const sid = svg.attr("data-shadow-id");
+        if (sid) ridgeGroup.attr("filter", `url(#${sid})`);
+      }
 
       // ── KDE area + line ────────────────────────────────────────────────────
       if (ridgeMode === "kde" || ridgeMode === "both") {
@@ -693,7 +1067,8 @@ Spotfire.initialize(async (mod) => {
         };
         const statTop    = baselineY - ridgeH;
         const statBottom = baselineY;
-        const STAT_COLOR = "#000";        // user requested black for visibility
+        const STAT_COLOR = themeText;     // follow Spotfire theme so stats
+                                          // are readable in light + dark.
 
         // IQR shaded band from Q1 to Q3
         if (showQuartiles && Number.isFinite(stats.q1) && Number.isFinite(stats.q3)) {
@@ -782,15 +1157,15 @@ Spotfire.initialize(async (mod) => {
           legend.append("line")
             .attr("x1", cx).attr("x2", cx + 18)
             .attr("y1", 0).attr("y2", 0)
-            .attr("stroke", "#000")
+            .attr("stroke", themeText)
             .attr("stroke-width", 1.6)
             .attr("stroke-dasharray", item.dash);
         } else {
           legend.append("rect")
             .attr("x", cx).attr("y", -5)
             .attr("width", 18).attr("height", 10)
-            .attr("fill", "#000").attr("fill-opacity", 0.08)
-            .attr("stroke", "#000").attr("stroke-opacity", 0.55)
+            .attr("fill", themeText).attr("fill-opacity", 0.08)
+            .attr("stroke", themeText).attr("stroke-opacity", 0.55)
             .attr("stroke-dasharray", "2 2")
             .attr("stroke-width", 0.8);
         }
@@ -798,7 +1173,7 @@ Spotfire.initialize(async (mod) => {
           .attr("x", cx + 24)
           .attr("y", 0)
           .attr("dominant-baseline", "middle")
-          .attr("fill", "var(--og-text, #c0a878)")
+          .attr("fill", themeText)
           .attr("font-size", 10)
           .attr("font-weight", 600)
           .text(item.label);
@@ -806,13 +1181,33 @@ Spotfire.initialize(async (mod) => {
       });
     }
 
-    g.selectAll(".y-label")
+    // Right-align labels in the left margin and truncate any text that would
+    // overflow that gutter. We measure with the actual rendered SVG text node
+    // and chop characters from the end until it fits, appending an ellipsis.
+    // The full label is preserved in a <title> so users can hover to read it.
+    const labelMaxW = Math.max(20, margin.left - 14); // 4px gutter + 10px gap
+    const labelSel = g.selectAll(".y-label")
       .data(yKeys)
       .join("text")
       .attr("class", "y-label")
       .attr("x", -10)
       .attr("y", (k) => yScale(k))
-      .text((k) => k);
+      .attr("text-anchor", "end")
+      .text((k) => (k == null ? "" : String(k)));
+    labelSel.each(function (k) {
+      const node = this;
+      const full = k == null ? "" : String(k);
+      if (!node.getComputedTextLength) return;
+      let txt = full;
+      // Fast path: already fits.
+      if (node.getComputedTextLength() <= labelMaxW) return;
+      // Trim until "txt…" fits.
+      while (txt.length > 1 && node.getComputedTextLength() > labelMaxW) {
+        txt = txt.slice(0, -1);
+        node.textContent = txt + "…";
+      }
+    });
+    labelSel.append("title").text((k) => (k == null ? "" : String(k)));
 
     // ── X axis ────────────────────────────────────────────────────────────────
     g.append("g")
@@ -824,8 +1219,6 @@ Spotfire.initialize(async (mod) => {
 
     // ── Rubber-band marking ───────────────────────────────────────────────────
     setupRubberBand(svg, g, xScale, yScale, yKeys, grouped, margin, dataView, ridgeH);
-
-    context.signalRenderComplete();
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -877,32 +1270,21 @@ Spotfire.initialize(async (mod) => {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Tooltip helpers
+  // Tooltip helpers — uses the native Spotfire tooltip via mod.controls.tooltip
   // ─────────────────────────────────────────────────────────────────────────
 
-  const tooltip = document.getElementById("tooltip");
+  // mod.controls.tooltip exposes show(content)/hide(). It styles + positions
+  // the tooltip exactly like a built-in Spotfire visualization and follows
+  // the mouse until hide() is called. Subsequent show() calls just update
+  // the text in place.
+  const nativeTooltip = mod.controls && mod.controls.tooltip;
 
-  function showTooltip(event, html) {
-    tooltip.innerHTML = html;
-    tooltip.classList.remove("hidden");
-    positionTooltip(event);
-  }
-
-  function positionTooltip(event) {
-    const ttW = tooltip.offsetWidth;
-    const ttH = tooltip.offsetHeight;
-    const cx  = window.innerWidth;
-    const cy  = window.innerHeight;
-    let x = event.clientX + 14;
-    let y = event.clientY + 14;
-    if (x + ttW > cx - 10) x = event.clientX - ttW - 14;
-    if (y + ttH > cy - 10) y = event.clientY - ttH - 14;
-    tooltip.style.left = `${Math.max(0, x)}px`;
-    tooltip.style.top  = `${Math.max(0, y)}px`;
+  function showTooltip(_event, text) {
+    if (nativeTooltip) nativeTooltip.show(text);
   }
 
   function hideTooltip() {
-    tooltip.classList.add("hidden");
+    if (nativeTooltip) nativeTooltip.hide();
   }
 
   function onRidgeHover(event, yKey, xVals, groupRows) {
@@ -911,23 +1293,24 @@ Spotfire.initialize(async (mod) => {
     const sd     = Math.sqrt(viz.variance(xVals)).toFixed(2);
     const min    = viz.min(xVals).toFixed(2);
     const max    = viz.max(xVals).toFixed(2);
-    showTooltip(event, `
-      <div class="tooltip-group">${yKey}</div>
-      <div class="tooltip-row"><span class="tooltip-label">Count</span><span class="tooltip-value">${xVals.length}</span></div>
-      <div class="tooltip-row"><span class="tooltip-label">Mean</span><span class="tooltip-value">${mean}</span></div>
-      <div class="tooltip-row"><span class="tooltip-label">Median</span><span class="tooltip-value">${median}</span></div>
-      <div class="tooltip-row"><span class="tooltip-label">Std Dev</span><span class="tooltip-value">${sd}</span></div>
-      <div class="tooltip-row"><span class="tooltip-label">Min</span><span class="tooltip-value">${min}</span></div>
-      <div class="tooltip-row"><span class="tooltip-label">Max</span><span class="tooltip-value">${max}</span></div>
-    `);
+    // Native tooltip takes plain text. Use tab-aligned key/value pairs.
+    showTooltip(event,
+      `${yKey}\n` +
+      `Count:   ${xVals.length}\n` +
+      `Mean:    ${mean}\n` +
+      `Median:  ${median}\n` +
+      `Std Dev: ${sd}\n` +
+      `Min:     ${min}\n` +
+      `Max:     ${max}`
+    );
   }
 
   function onBinHover(event, yKey, bin, groupRows) {
-    showTooltip(event, `
-      <div class="tooltip-group">${yKey}</div>
-      <div class="tooltip-row"><span class="tooltip-label">Range</span><span class="tooltip-value">${bin.x0.toFixed(2)} – ${bin.x1.toFixed(2)}</span></div>
-      <div class="tooltip-row"><span class="tooltip-label">Count</span><span class="tooltip-value">${bin.length}</span></div>
-    `);
+    showTooltip(event,
+      `${yKey}\n` +
+      `Range: ${bin.x0.toFixed(2)} – ${bin.x1.toFixed(2)}\n` +
+      `Count: ${bin.length}`
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -976,34 +1359,30 @@ Spotfire.initialize(async (mod) => {
     const slotH = (yScale.step ? yScale.step() : 30);
     const halfBand = slotH * 0.5;
 
-    const ridgeAtEvent = (event, yPx) => {
-      // 1) Element under the cursor — walks up the DOM to find the ridge group.
+    // For click handling we want a strict hit-test: only treat the click as
+    // landing on a ridge when the actual DOM target IS part of that ridge's
+    // group. Anything else (gridline, baseline, axis text, plain background)
+    // counts as "empty" and should clear marking. The previous geometric
+    // fallback caused empty-space clicks to mark nearby ridges.
+    const ridgeAtEvent = (event) => {
       const target = event && event.target;
       if (target && target.closest) {
         const grp = target.closest(".ridge-group[data-key]");
-        if (grp) {
-          const k = grp.getAttribute("data-key");
-          if (k != null) return k;
-        }
+        if (grp) return grp.getAttribute("data-key");
       }
-      // 2) Fallback: nearest baseline within one slot height. Bias slightly
-      //    toward baselines that sit BELOW the click (since ridge bodies
-      //    extrude upward from their baseline).
-      let best = null, bestD = Infinity;
-      for (const k of yKeys) {
-        const baseline = yScale(k);
-        const d = baseline >= yPx
-          ? (baseline - yPx)              // click is above baseline (in body)
-          : (yPx - baseline) * 1.5;       // click is below baseline (penalised)
-        if (d < bestD && d <= slotH) { bestD = d; best = k; }
-      }
-      return best;
+      return null;
     };
 
     svg.on("mousedown", (event) => {
       if (event.button !== 0) return;
       // Don't start a band when interacting with the settings UI.
       if (event.target.closest("#settings-btn, #settings-panel")) return;
+      // Suppress the browser's native text-selection drag so axis tick
+      // labels (and any other text) don't get highlighted while the user
+      // is rubber-band marking. CSS `user-select:none` on #mod-container
+      // is the primary defense; this is a safety net for browsers that
+      // still initiate a selection on mousedown.
+      event.preventDefault();
       const [mx, my] = viz.pointer(event, g.node());
       startX = mx; startY = my;
       isDragging = false;
@@ -1011,11 +1390,34 @@ Spotfire.initialize(async (mod) => {
         .attr("class", "marking-rect")
         .attr("x", mx).attr("y", my)
         .attr("width", 0).attr("height", 0);
+
+      // Bind move/up on the WINDOW (not the SVG) so the drag continues to
+      // track and a release that happens outside the SVG (over the settings
+      // panel, another panel, the page chrome, etc.) still completes the
+      // selection. This mirrors how Spotfire's native marking works
+      // (see Donut's RectMarking — it also attaches to `document`).
+      window.addEventListener("mousemove", onDocMove,  true);
+      window.addEventListener("mouseup",   onDocUp,    true);
     });
 
-    svg.on("mousemove", (event) => {
-      if (startX === null || !rubberRect) return;
+    // Convert a window-space mouse event into a point in the inner-plot
+    // coordinate system used by xScale/yScale, clamped so a release outside
+    // the panel still produces a sensible selection rectangle.
+    const ptFromEvent = (event) => {
       const [mx, my] = viz.pointer(event, g.node());
+      // Inner plot extents (g is already translated by margin.left/top).
+      const innerW = (xScale.range()[1] - xScale.range()[0]);
+      // yScale is a scalePoint; safe bounds for the band rectangle:
+      const innerH = (svg.node().clientHeight || 0) - margin.top - margin.bottom;
+      return [
+        Math.max(0, Math.min(innerW, mx)),
+        Math.max(0, Math.min(innerH, my)),
+      ];
+    };
+
+    const onDocMove = (event) => {
+      if (startX === null || !rubberRect) return;
+      const [mx, my] = ptFromEvent(event);
       const w = Math.abs(mx - startX);
       const h = Math.abs(my - startY);
       if (!isDragging && (w > DRAG_THRESHOLD || h > DRAG_THRESHOLD)) isDragging = true;
@@ -1024,11 +1426,13 @@ Spotfire.initialize(async (mod) => {
         .attr("y", Math.min(startY, my))
         .attr("width", w)
         .attr("height", h);
-    });
+    };
 
-    svg.on("mouseup", async (event) => {
+    const onDocUp = async (event) => {
+      window.removeEventListener("mousemove", onDocMove, true);
+      window.removeEventListener("mouseup",   onDocUp,   true);
       if (startX === null) return;
-      const [mx, my] = viz.pointer(event, g.node());
+      const [mx, my] = ptFromEvent(event);
 
       const wasDragging = isDragging;
       const pressX = startX, pressY = startY;
@@ -1043,7 +1447,7 @@ Spotfire.initialize(async (mod) => {
 
       if (!wasDragging) {
         // Treat as a click.
-        const key = ridgeAtEvent(event, my);
+        const key = ridgeAtEvent(event);
         if (key) {
           const rows = (grouped.get(key) || []).map((r) => r.row).filter(Boolean);
           await markRows(rows, additive, dataView);
@@ -1077,7 +1481,7 @@ Spotfire.initialize(async (mod) => {
         // Tiny drag that didn't actually intersect any ridge body —
         // treat it as a click on the press point so Ctrl-clicks that
         // jitter a few pixels still add to the marking.
-        const key = ridgeAtEvent(event, pressY);
+        const key = ridgeAtEvent(event);
         if (key) {
           const rows = (grouped.get(key) || []).map((r) => r.row).filter(Boolean);
           await markRows(rows, additive, dataView);
@@ -1085,7 +1489,7 @@ Spotfire.initialize(async (mod) => {
           try { await dataView.clearMarking(); } catch {}
         }
       }
-    });
+    };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1093,16 +1497,19 @@ Spotfire.initialize(async (mod) => {
   // ─────────────────────────────────────────────────────────────────────────
 
   function showEmpty(msg) {
-    const svg = viz.select("#joy-plot-svg");
-    svg.selectAll("*").remove();
-    const W = +svg.attr("width") || svg.node().clientWidth || 600;
-    const H = +svg.attr("height") || svg.node().clientHeight || 300;
-    svg.attr("width", W).attr("height", H);
+    const collection = viz.select("#trellis-collection");
+    collection.selectAll("*").remove();
+    collection.classed("trellised", false);
+    const W = collection.node().clientWidth || 600;
+    const H = collection.node().clientHeight || 300;
+    const svg = collection.append("svg")
+      .attr("class", "joy-plot-svg empty-svg")
+      .attr("width", W).attr("height", H)
+      .style("width", "100%").style("height", "100%");
     svg.append("text")
       .attr("class", "empty-state")
       .attr("x", W / 2).attr("y", H / 2)
       .attr("text-anchor", "middle")
-      .attr("fill", "#c0a878")
       .attr("font-size", 14)
       .text(msg);
     console.log("[JoyPlot]", msg);
