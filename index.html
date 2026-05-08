@@ -14,7 +14,26 @@
           <path fill="currentColor" d="M19.14 12.94a7.97 7.97 0 0 0 .05-.94 7.97 7.97 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.62.94l-2.39-.96a.5.5 0 0 0-.61.22L2.66 8.48a.5.5 0 0 0 .12.64l2.03 1.58a8.07 8.07 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .61.22l2.39-.96c.5.38 1.04.69 1.62.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.25 1.12-.56 1.62-.94l2.39.96a.5.5 0 0 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/>
         </svg>
       </button>
-      <div id="trellis-collection" class="trellis-collection"></div>
+      <div id="trellis-wrapper">
+        <div id="trellis-collection" class="trellis-collection"></div>
+        <!-- Custom vertical scrollbar matching Spotfire's native scrollbar structure -->
+        <div id="sf-vscrollbar" class="sf-scrollbar" style="display:none">
+          <div class="sf-scrollbar-btn sf-scrollbar-btn-up">
+            <svg viewBox="0 0 12 12" fill="currentColor" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%">
+              <polygon points="3 4 6 8 9 4 3 4" transform="translate(0 12) scale(1 -1)"/>
+            </svg>
+          </div>
+          <div class="sf-scrollbar-track">
+            <div class="sf-scrollbar-thumb"></div>
+          </div>
+          <div class="sf-scrollbar-btn sf-scrollbar-btn-down">
+            <svg viewBox="0 0 12 12" fill="currentColor" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%">
+              <polygon points="3 4 6 8 9 4 3 4"/>
+            </svg>
+          </div>
+        </div>
+        <div id="trellis-right-border"></div>
+      </div>
       <div id="settings-panel" class="hidden"></div>
     </div>
 

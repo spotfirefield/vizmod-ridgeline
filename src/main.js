@@ -197,6 +197,18 @@ Spotfire.initialize(async (mod) => {
           <option value="panels"  ${v.trellisMode === "panels"  ? "selected" : ""}>Panels (grid)</option>
         </select>
       </label>
+      <label>
+        <span class="lbl-text">Panels per page (cols × rows, 0 = fit)</span>
+        <span style="display:inline-flex;gap:4px;align-items:center;">
+          <input type="number" data-prop="panelsPerPageCols" min="0" max="100" step="1" value="${v.panelsPerPageCols ?? 0}"
+                 title="Columns per page"
+                 style="width:48px;background:transparent;color:inherit;border:1px solid var(--sf-panel-border, #2a3140);border-radius:3px;padding:1px 4px;"/>
+          <span style="opacity:.7">×</span>
+          <input type="number" data-prop="panelsPerPageRows" min="0" max="100" step="1" value="${v.panelsPerPageRows ?? 0}"
+                 title="Rows per page"
+                 style="width:48px;background:transparent;color:inherit;border:1px solid var(--sf-panel-border, #2a3140);border-radius:3px;padding:1px 4px;"/>
+        </span>
+      </label>
       ${range("overlapFactor", "Overlap",      0.5, 5,   0.1,  v.overlapFactor, (x) => Number(x).toFixed(1))}
       ${range("fillOpacity",   "Fill opacity", 0,   1,   0.05, v.fillOpacity,   (x) => Number(x).toFixed(2))}
       ${range("strokeWidth",   "Stroke width", 0.5, 5,   0.1,  v.strokeWidth,   (x) => Number(x).toFixed(1))}
@@ -266,6 +278,14 @@ Spotfire.initialize(async (mod) => {
         props[el.dataset.prop].set(el.value);
       });
     });
+
+    // Wire <input type="number">
+    panel.querySelectorAll('input[type="number"][data-prop]').forEach((el) => {
+      el.addEventListener("change", () => {
+        const n = Number(el.value);
+        props[el.dataset.prop].set(Number.isFinite(n) ? n : 0);
+      });
+    });
   }
 
   async function toggleSettings() {
@@ -307,6 +327,22 @@ Spotfire.initialize(async (mod) => {
     showMeanP, showMedianP, showQuartilesP, sortByP, trellisModeP,
     windowSize,
   ) {
+    // Read pagination properties lazily — keeping them out of the reader
+    // subscription means an older manifest (without these properties) can't
+    // stall renders.
+    const safeProp = async (name, fallback) => {
+      try {
+        const p = await mod.property(name);
+        if (p && typeof p.value === "function" && typeof p.set === "function") return p;
+        console.warn(`[JoyPlot] property "${name}" returned but missing value()/set() — using stub. Reload the mod so Spotfire picks up the new manifest.`);
+      } catch (e) {
+        console.warn(`[JoyPlot] property "${name}" not found in manifest — using stub. Reload the mod (right-click → Reload Mod) so Spotfire picks up the new manifest.`, e);
+      }
+      return { value: () => fallback, set: () => {} };
+    };
+    const panelsPerPageP     = await safeProp("panelsPerPage", 0);
+    const panelsPerPageColsP = await safeProp("panelsPerPageCols", 0);
+    const panelsPerPageRowsP = await safeProp("panelsPerPageRows", 0);
     // Capture properties so the settings panel can read/write them.
     latestProps = {
       ridgeMode:      ridgeModeP,
@@ -322,13 +358,16 @@ Spotfire.initialize(async (mod) => {
       showQuartiles:  showQuartilesP,
       sortBy:         sortByP,
       trellisMode:    trellisModeP,
+      panelsPerPage:     panelsPerPageP,
+      panelsPerPageCols: panelsPerPageColsP,
+      panelsPerPageRows: panelsPerPageRowsP,
     };
 
     // Push Spotfire theme → CSS variables (recomputed each render so a
     // theme change in the host immediately re-themes the visual).
     const styling = applyStyling();
-    const themeText = (styling && styling.scales.font.color) || "#c0a878";
-    const themeScaleLine = (styling && styling.scales.line.stroke) || "#2a3140";
+    const themeText = (styling && styling.scales.font.color) || "#666666";
+    const themeScaleLine = (styling && styling.scales.line.stroke) || "#d0d0d0";
     // ── Diagnostics ─────────────────────────────────────────────────────────
     console.log("[JoyPlot] render called", {
       xAxis: xAxis && { name: xAxis.name, expression: xAxis.expression, isMapped: xAxis.isMapped },
@@ -510,7 +549,15 @@ Spotfire.initialize(async (mod) => {
     const xExtent = viz.extent(rows, (r) => r.xVal);
 
     // ── Trellis orchestration ───────────────────────────────────────────────
-    const trellisMode = (trellisModeP.value() || "rows").toLowerCase();
+    let trellisMode = (trellisModeP.value() || "rows").toLowerCase();
+    // If the user supplied cols and/or rows on the pagination control,
+    // they want a grid — promote to "panels" mode regardless of the saved
+    // trellis layout choice. This is what makes 2 × 2 actually produce a
+    // 2-wide, 2-tall grid even if the dropdown still says "Rows".
+    const _ppCols0 = Math.max(0, Math.floor(panelsPerPageColsP.value() ?? 0));
+    const _ppRows0 = Math.max(0, Math.floor(panelsPerPageRowsP.value() ?? 0));
+    console.log("[JoyPlot] pagination", { cols: _ppCols0, rows: _ppRows0, savedMode: trellisMode });
+    if (_ppCols0 > 0 || _ppRows0 > 0) trellisMode = "panels";
 
     // Final guard: even if the API reported the trellis axis as mapped, an
     // unmapped axis often surfaces as a single trellisKey that is null,
@@ -561,32 +608,96 @@ Spotfire.initialize(async (mod) => {
     // (no border, no title, no mode-specific sizing) so the visual looks
     // identical to the pre-trellis behaviour.
     const collection = viz.select("#trellis-collection");
+    const wrapper    = viz.select("#trellis-wrapper");
+    // Preserve the current scroll position across the full DOM rebuild —
+    // marking, hover, etc. all trigger re-renders, and without this the
+    // scrollbar snaps back to the top each time.
+    const _prevScrollTop  = collection.node().scrollTop  || 0;
+    const _prevScrollLeft = collection.node().scrollLeft || 0;
     collection.selectAll("*").remove();
     if (trellisMapped) {
+      wrapper.classed("trellised", true);
       collection.attr("class", "trellis-collection trellised " + trellisMode);
     } else {
+      wrapper.classed("trellised", false);
       collection.attr("class", "trellis-collection single");
     }
 
-    const collRect = collection.node().getBoundingClientRect();
-    const collW = collRect.width  || windowSize.width;
-    const collH = collRect.height || windowSize.height;
+    // Use clientWidth/clientHeight (excludes scrollbar gutter) so that panel
+    // size calculations never include space occupied by the scrollbar track.
+    const wrapperNode = wrapper.node();
+    const collW = (wrapperNode.clientWidth  || wrapperNode.getBoundingClientRect().width)  || windowSize.width;
+    const collH = (wrapperNode.clientHeight || wrapperNode.getBoundingClientRect().height) || windowSize.height;
     const leafCount = leaves.length;
 
     // Compute panel sizes per trellis mode (only when actually trellised).
+    // Pagination: panelsPerPageCols × panelsPerPageRows fixes the grid that
+    // fits in one viewport; everything beyond overflows into a vertical
+    // scrollbar (horizontal in Columns mode).
+    //   - Rows mode    : only the rows count is used
+    //   - Columns mode : only the cols count is used
+    //   - Panels mode  : both are used; cols also fixes the grid width so
+    //                    pages stay visually aligned
+    // 0 in either field means "fit to viewport" for that axis.
+    const ppCols  = Math.max(0, Math.floor(panelsPerPageColsP.value() ?? 0));
+    const ppRows  = Math.max(0, Math.floor(panelsPerPageRowsP.value() ?? 0));
+    // Backwards compat: legacy single-value property still fills in if the
+    // mode-relevant axis is left at 0.
+    const ppLegacy = Math.max(0, Math.floor(panelsPerPageP.value() ?? 0));
+
     let panelW = "auto", panelH = "auto";
     let gridCols = 1, gridRows = leafCount;
+    let paginated = false;
     if (trellisMapped) {
       if (trellisMode === "rows") {
-        panelH = ((collH - (leafCount + 1)) / leafCount) + "px";
+        const perPage = ppRows > 0 ? ppRows : ppLegacy;
+        const visible = perPage > 0 ? Math.min(perPage, leafCount) : leafCount;
+        paginated = perPage > 0 && leafCount > perPage;
+        panelH = `calc(100% / ${visible})`;
       } else if (trellisMode === "columns") {
-        panelW = ((collW - (leafCount + 1)) / leafCount) + "px";
+        const perPage = ppCols > 0 ? ppCols : ppLegacy;
+        const visible = perPage > 0 ? Math.min(perPage, leafCount) : leafCount;
+        paginated = perPage > 0 && leafCount > perPage;
+        panelW = `calc(100% / ${visible})`;
       } else if (trellisMode === "panels") {
-        gridRows = Math.max(1, Math.ceil(Math.sqrt(leafCount)));
-        gridCols = Math.max(1, Math.ceil(leafCount / gridRows));
-        panelW = ((collW - (gridCols + 2)) / gridCols) + "px";
-        panelH = ((collH - (gridRows + 2)) / gridRows) + "px";
+        // Choose grid columns: explicit cols → use them; else default sqrt.
+        if (ppCols > 0) {
+          gridCols = Math.max(1, Math.min(ppCols, leafCount));
+        } else {
+          gridCols = Math.max(1, Math.ceil(Math.sqrt(leafCount)));
+        }
+        gridRows = Math.max(1, Math.ceil(leafCount / gridCols));
+
+        // Visible rows per page: explicit rows → use them; else fit all.
+        const visibleRows = ppRows > 0
+          ? Math.min(ppRows, gridRows)
+          : gridRows;
+        paginated = ppRows > 0 && gridRows > ppRows;
+
+        // When a vertical scrollbar will appear, show the custom scrollbar
+        // div first so the browser allocates its 12px immediately.
+        const sbEl = document.getElementById('sf-vscrollbar');
+        if (sbEl) sbEl.style.display = paginated ? 'flex' : 'none';
+        // Use CSS calc() so the browser distributes width exactly —
+        // no pixel rounding errors, no dependency on measured clientWidth.
+        panelW = `calc(100% / ${gridCols})`;
+        panelH = `calc(100% / ${visibleRows})`;
       }
+    }
+    collection.classed("paginated", paginated);
+    collection.classed("paginated-h", paginated && trellisMode === "columns");
+    // Mirror onto wrapper so CSS can remove the conflicting border side
+    // without needing :has() (unsupported in older Chromium builds).
+    wrapper.classed("paginated",   paginated);
+    wrapper.classed("paginated-h", paginated && trellisMode === "columns");
+
+    // Show/hide the custom vertical scrollbar div. It's only used for
+    // vertical scrolling (rows + panels modes). Columns mode uses the
+    // native horizontal webkit scrollbar.
+    const _vsbEl = document.getElementById('sf-vscrollbar');
+    if (_vsbEl) {
+      const showVsb = paginated && trellisMode !== "columns";
+      _vsbEl.style.display = showVsb ? 'flex' : 'none';
     }
 
     // Create panel DOM
@@ -673,15 +784,97 @@ Spotfire.initialize(async (mod) => {
       renderPanel(svgSel, leaf.rows, W, H, panelCtx);
     });
 
+    // Restore the scrollbar position captured before the rebuild so a
+    // re-render triggered by marking/hover doesn't snap the user back to
+    // the top of the page.
+    if (_prevScrollTop || _prevScrollLeft) {
+      const node = collection.node();
+      node.scrollTop  = _prevScrollTop;
+      node.scrollLeft = _prevScrollLeft;
+    }
+
+    // Set up the custom vertical scrollbar interaction (thumb sync + buttons).
+    setupCustomScrollbar(collection.node(), paginated && trellisMode !== "columns");
+
     context.signalRenderComplete();
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // Per-panel chart renderer (called once per trellis leaf by render()).
-  // Renders the full ridge/joy chart inside the supplied <svg>, against the
-  // supplied subset of rows and panel dimensions. xExtent (from ctx) is the
-  // shared X domain so all trellis panels align horizontally.
+  // Custom vertical scrollbar — mirrors Spotfire's native scrollbar structure:
+  //   12px container | 12px arrow buttons | 6px thumb centred in track
+  // Called after every render so the thumb reflects the current scroll state.
   // ───────────────────────────────────────────────────────────────────────────
+  function setupCustomScrollbar(collNode, isActive) {
+    const sbEl   = document.getElementById('sf-vscrollbar');
+    if (!sbEl) return;
+
+    // Tear down previous listeners stored on the element.
+    if (sbEl._sbCleanup) { sbEl._sbCleanup(); sbEl._sbCleanup = null; }
+
+    if (!isActive) return;
+
+    const thumb   = sbEl.querySelector('.sf-scrollbar-thumb');
+    const track   = sbEl.querySelector('.sf-scrollbar-track');
+    const btnUp   = sbEl.querySelector('.sf-scrollbar-btn-up');
+    const btnDown = sbEl.querySelector('.sf-scrollbar-btn-down');
+
+    // ── Sync thumb position / size to current scroll state ──────────────────
+    function updateThumb() {
+      const scrollH  = collNode.scrollHeight;
+      const clientH  = collNode.clientHeight;
+      if (scrollH <= clientH) { thumb.style.display = 'none'; return; }
+      thumb.style.display = '';
+      const trackH   = track.clientHeight;
+      const ratio    = clientH / scrollH;
+      const thumbH   = Math.max(20, Math.round(trackH * ratio));
+      const maxTop   = trackH - thumbH;
+      const top      = Math.round((collNode.scrollTop / (scrollH - clientH)) * maxTop);
+      thumb.style.height = thumbH + 'px';
+      thumb.style.top    = Math.min(maxTop, top) + 'px';
+    }
+
+    collNode.addEventListener('scroll', updateThumb);
+    updateThumb();
+
+    // ── Arrow buttons: scroll by ~10% of visible height per click ───────────
+    function onUp()   { collNode.scrollTop -= Math.round(collNode.clientHeight * 0.1); }
+    function onDown() { collNode.scrollTop += Math.round(collNode.clientHeight * 0.1); }
+    btnUp.addEventListener('click', onUp);
+    btnDown.addEventListener('click', onDown);
+
+    // ── Thumb drag ───────────────────────────────────────────────────────────
+    function onThumbMousedown(e) {
+      e.preventDefault();
+      const startY          = e.clientY;
+      const startScrollTop  = collNode.scrollTop;
+      const trackH          = track.clientHeight;
+      const thumbH          = thumb.clientHeight;
+      const scrollRange     = collNode.scrollHeight - collNode.clientHeight;
+      const pxPerUnit       = scrollRange / Math.max(1, trackH - thumbH);
+
+      function onMove(e) {
+        collNode.scrollTop = startScrollTop + (e.clientY - startY) * pxPerUnit;
+      }
+      function onUp() {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    }
+    thumb.addEventListener('mousedown', onThumbMousedown);
+
+    // Store cleanup so the next render call removes stale listeners.
+    sbEl._sbCleanup = () => {
+      collNode.removeEventListener('scroll', updateThumb);
+      btnUp.removeEventListener('click', onUp);
+      btnDown.removeEventListener('click', onDown);
+      thumb.removeEventListener('mousedown', onThumbMousedown);
+    };
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Per-panel chart renderer (called once per trellis leaf by render()).
   function renderPanel(svg, rows, W, H, ctx) {
     const {
       ridgeMode, overlapFactor, bwOverride, histBins, fillOpacity, strokeWidth,
@@ -817,22 +1010,6 @@ Spotfire.initialize(async (mod) => {
     const g = svg.append("g")
       .attr("transform", `translate(${margin.left},${margin.top})`);
 
-    // ── Gridlines ────────────────────────────────────────────────────────────
-    g.append("g")
-      .attr("class", "grid")
-      .attr("transform", `translate(0,${innerH})`)
-      .call(
-        viz.axisBottom(xScale)
-          .tickSize(-innerH)
-          .tickFormat("")
-      )
-      .call((gEl) => {
-        gEl.select(".domain").remove();
-        gEl.selectAll("line")
-          .attr("stroke", "rgba(200,134,42,0.08)")
-          .attr("stroke-dasharray", "4,4");
-      });
-
     // (anyMarked is supplied by the orchestrator so all panels stay in
     // visual lock-step — marking in one panel fades unmarked ridges in all.)
 
@@ -959,44 +1136,88 @@ Spotfire.initialize(async (mod) => {
           .attr("stroke-opacity", baseStrokeOpacity)
           .attr("pointer-events", "none");
 
-        // Overlay: KDE of just the marked subset, drawn at full intensity.
+        // ── Marked-range area highlight ────────────────────────────────────
+        // If ALL rows in this group are marked (ridge-click or full capture),
+        // highlight the entire ridge at full opacity.
+        // If only a subset is marked, highlight the sub-range
+        // [min(marked xVal), max(marked xVal)] under the curve.
         if (groupHasMarks) {
-          const markedXVals = markedRows.map((r) => r.xVal);
-          // Reuse the same bandwidth so the marked overlay aligns with the
-          // shape of the full ridge rather than being noisy at small N.
-          const markedKdePoints = computeKDE(markedXVals, xScale.ticks(120), bw);
-          // Scale the marked density by its share of the group so the overlay
-          // height reflects how much of the distribution is marked.
-          const share = markedXVals.length / xVals.length;
-          const markedAreaGen = viz.area()
-            .x((p) => xScale(p[0]))
-            .y0(0)
-            .y1((p) => -kdeYScale(p[1] * share))
-            .curve(viz.curveBasis);
-          const markedLineGen = viz.line()
-            .x((p) => xScale(p[0]))
-            .y((p) => -kdeYScale(p[1] * share))
-            .curve(viz.curveBasis);
+          const allMarked = markedRows.length === groupRows.length;
 
-          ridgeGroup.append("path")
-            .datum(markedKdePoints)
-            .attr("class", "ridge-area kde-area marked")
-            .attr("transform", `translate(0,${baselineY})`)
-            .attr("d", markedAreaGen)
-            .attr("fill", ridgeFill(groupColor))
-            .attr("fill-opacity", fillOpacity)
-            .attr("stroke", "none")
-            .attr("pointer-events", "none");
+          if (allMarked) {
+            // Full ridge highlight — re-draw the area + line at full opacity.
+            ridgeGroup.append("path")
+              .datum(kdePoints)
+              .attr("class", "ridge-area kde-area marked-hl")
+              .attr("transform", `translate(0,${baselineY})`)
+              .attr("d", areaGen)
+              .attr("fill", ridgeFill(groupColor))
+              .attr("fill-opacity", fillOpacity)
+              .attr("stroke", "none")
+              .attr("pointer-events", "none");
 
-          ridgeGroup.append("path")
-            .datum(markedKdePoints)
-            .attr("class", "ridge-line kde-line marked")
-            .attr("transform", `translate(0,${baselineY})`)
-            .attr("d", markedLineGen)
-            .attr("stroke", ridge3D ? lighten(groupColor, 60) : groupColor)
-            .attr("stroke-width", strokeWidth)
-            .attr("stroke-opacity", 1)
-            .attr("pointer-events", "none");
+            ridgeGroup.append("path")
+              .datum(kdePoints)
+              .attr("class", "ridge-line kde-line marked-hl")
+              .attr("transform", `translate(0,${baselineY})`)
+              .attr("d", lineGen)
+              .attr("fill", "none")
+              .attr("stroke", ridge3D ? lighten(groupColor, 60) : groupColor)
+              .attr("stroke-width", strokeWidth)
+              .attr("stroke-opacity", 1)
+              .attr("pointer-events", "none");
+          } else {
+          const markedXMin = viz.min(markedRows, (r) => r.xVal);
+          const markedXMax = viz.max(markedRows, (r) => r.xVal);
+
+          if (Number.isFinite(markedXMin) && Number.isFinite(markedXMax) && markedXMax > markedXMin) {
+            // Evaluate the kernel at the exact boundary X values so the area
+            // starts and ends precisely there, not snapped to the nearest tick.
+            const kdeKernel = gaussianKernel(bw);
+            const kdeAtX = (x) => viz.mean(xVals, (v) => kdeKernel(x - v));
+
+            const interior = kdePoints.filter((p) => p[0] > markedXMin && p[0] < markedXMax);
+            const bLeft  = [markedXMin, kdeAtX(markedXMin)];
+            const bRight = [markedXMax, kdeAtX(markedXMax)];
+
+            // Duplicate endpoints so curveBasis passes through them exactly.
+            const hlData = [bLeft, bLeft, ...interior, bRight, bRight];
+
+            const hlAreaGen = viz.area()
+              .x((p) => xScale(p[0]))
+              .y0(0)
+              .y1((p) => -kdeYScale(p[1]))
+              .curve(viz.curveBasis);
+
+            const hlLineGen = viz.line()
+              .x((p) => xScale(p[0]))
+              .y((p) => -kdeYScale(p[1]))
+              .curve(viz.curveBasis);
+
+            // Filled area — full opacity so it stands out over the faded ridge.
+            ridgeGroup.append("path")
+              .datum(hlData)
+              .attr("class", "ridge-area kde-area marked-hl")
+              .attr("transform", `translate(0,${baselineY})`)
+              .attr("d", hlAreaGen)
+              .attr("fill", ridgeFill(groupColor))
+              .attr("fill-opacity", fillOpacity)
+              .attr("stroke", "none")
+              .attr("pointer-events", "none");
+
+            // Bright outline on top of the highlighted area.
+            ridgeGroup.append("path")
+              .datum(hlData)
+              .attr("class", "ridge-line kde-line marked-hl")
+              .attr("transform", `translate(0,${baselineY})`)
+              .attr("d", hlLineGen)
+              .attr("fill", "none")
+              .attr("stroke", ridge3D ? lighten(groupColor, 60) : groupColor)
+              .attr("stroke-width", strokeWidth)
+              .attr("stroke-opacity", 1)
+              .attr("pointer-events", "none");
+          }
+          } // end else (partial selection)
         }
       }
 
@@ -1356,8 +1577,6 @@ Spotfire.initialize(async (mod) => {
     // first try real SVG element-hit-testing (which respects draw order /
     // z-order and matches what the user actually sees), and only fall back
     // to geometric snapping for clicks that land on empty background.
-    const slotH = (yScale.step ? yScale.step() : 30);
-    const halfBand = slotH * 0.5;
 
     // For click handling we want a strict hit-test: only treat the click as
     // landing on a ridge when the actual DOM target IS part of that ridge's
@@ -1463,9 +1682,24 @@ Spotfire.initialize(async (mod) => {
       const x0 = xScale.invert(x0px);
       const x1 = xScale.invert(x1px);
 
+      // Hit-test: which ridges does the rubber-band actually cover?
+      //
+      // Each ridge's baseline is at yScale(key); the slot between consecutive
+      // baselines is slotH. With overlapFactor > 1 the visual body (ridgeH)
+      // extends above the slot, into the neighbour's space — so testing against
+      // ridgeH or even slotH makes the selection too sensitive: crossing ridge
+      // A's baseline by 1 px immediately captures ridge B below.
+      //
+      // Fix: only capture ridge B when the rectangle's bottom edge crosses the
+      // MIDPOINT of B's slot (slotH/2 below A's baseline). This requires a
+      // deliberate movement into B's territory, not just a slight overshoot.
+      const slotH = yScale.step ? yScale.step() : ridgeH;
       const inBandKeys = yKeys.filter((k) => {
         const yb = yScale(k);
-        return yb + halfBand >= y0px && yb - halfBand <= y1px;
+        // The capture zone for this ridge is its lower half: [yb - slotH/2, yb).
+        // rect top (y0px) must be above the baseline; rect bottom (y1px) must
+        // reach the midpoint of the slot.
+        return y0px < yb && y1px >= (yb - slotH * 0.5);
       });
 
       const selectedRows = [];

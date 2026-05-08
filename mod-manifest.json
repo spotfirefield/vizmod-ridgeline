@@ -74,6 +74,21 @@
       "name": "trellisMode",
       "type": "string",
       "defaultValue": "rows"
+    },
+    {
+      "name": "panelsPerPage",
+      "type": "integer",
+      "defaultValue": 0
+    },
+    {
+      "name": "panelsPerPageCols",
+      "type": "integer",
+      "defaultValue": 0
+    },
+    {
+      "name": "panelsPerPageRows",
+      "type": "integer",
+      "defaultValue": 0
     }
   ],
   "dataViewDefinition": {

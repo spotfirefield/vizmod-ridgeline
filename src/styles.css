@@ -1,21 +1,20 @@
 /* ===================================================
-   Joy Plot Mod — Styles  (Oil & Gas Theme)
-   Palette: charcoal black · steel · amber · crude gold
+   Joy Plot Mod — Styles
+   All colors defer to Spotfire's --sf-* CSS variables
+   (published by applyStyling() in main.js each render).
+   Fallbacks match Spotfire's default light theme so the
+   mod looks native both inside and outside Spotfire.
    =================================================== */
 
 :root {
-  --og-bg:           #0b0d11;   /* near-black — crude oil */
-  --og-surface:      #13181f;   /* dark steel panel */
-  --og-border:       #2a3140;   /* steel pipe border */
-  --og-amber:        #c8862a;   /* petroleum amber */
-  --og-amber-bright: #e8a840;   /* bright amber highlight */
-  --og-teal:         #2e7d8e;   /* pipeline teal */
-  --og-steel:        #4a6070;   /* cold steel */
-  --og-text:         #c0a878;   /* warm parchment text */
-  --og-text-muted:   #6a7a6a;   /* muted field label */
-  --og-grid:         rgba(200,134,42,0.08); /* amber ghost grid */
-  --og-mark:         rgba(200,134,42,0.18); /* amber selection */
-  --og-mark-stroke:  rgba(232,168,64,0.7);  /* amber selection border */
+  /* Spotfire light-theme fallbacks — used only when --sf-* vars
+     are not yet set (dev browser, initial paint, etc.). */
+  --sf-fallback-text:         #333333;
+  --sf-fallback-text-muted:   #666666;
+  --sf-fallback-bg:           #ffffff;
+  --sf-fallback-surface:      #f5f5f5;
+  --sf-fallback-border:       #d0d0d0;
+  --sf-fallback-accent:       #1e88b4;  /* Spotfire blue */
 }
 
 *, *::before, *::after {
@@ -29,11 +28,9 @@ html, body {
   height: 100%;
   overflow: hidden;
   background: transparent;
-  /* Inherit Spotfire's themed font + color when available; fall back to the
-     mod's oil-and-gas palette otherwise. */
-  font-family: var(--sf-font-family, "Segoe UI", "Roboto", Arial, sans-serif);
+  font-family: var(--sf-font-family, "Segoe UI", Arial, sans-serif);
   font-size:   var(--sf-font-size, 12px);
-  color:       var(--sf-color, var(--og-text, #c0a878));
+  color:       var(--sf-color, var(--sf-fallback-text, #333333));
 }
 
 #mod-container {
@@ -56,23 +53,103 @@ html, body {
   display: block;
 }
 
-/* ── Trellis grid ─────────────────────────────── */
+/* ── Trellis wrapper (holds the border; never scrolls) ──────────────── */
+#trellis-wrapper {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+}
+/* Right border strip — kept in HTML but never shown; wrapper border handles all sides. */
+#trellis-right-border { display: none; }
+
+#trellis-wrapper.trellised {
+  border: 1px solid var(--trellis-border-color);
+}
+/* Horizontal paginated: collection becomes a column-flex so the h-scrollbar
+   sits at the bottom and the wrapper border wraps it cleanly. */
+#trellis-wrapper.trellised.paginated-h {
+  flex-direction: column;
+}
 :root {
-  /* Trellis chrome follows Spotfire's themed styling. main.js#applyStyling()
-     publishes --sf-bg / --sf-color / --sf-panel-bg / --sf-panel-border for
-     Light + Dark themes; the og-* fallbacks only apply outside Spotfire. */
-  --trellis-border-color: var(--sf-panel-border, var(--og-border, #2a3140));
-  --trellis-title-bg:     var(--sf-panel-bg,     var(--og-surface, #13181f));
-  --trellis-title-color:  var(--sf-color,        var(--og-text, #c0a878));
+  /* Trellis chrome defers to Spotfire theme variables. */
+  --trellis-border-color: var(--sf-panel-border, var(--sf-fallback-border, #d0d0d0));
+  --trellis-title-bg:     var(--sf-panel-bg,     var(--sf-fallback-surface, #f5f5f5));
+  --trellis-title-color:  var(--sf-color,        var(--sf-fallback-text, #333333));
 }
 
 .trellis-collection {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
   height: 100%;
   display: flex;
   overflow: hidden;
   flex-direction: column; /* default: rows */
 }
+
+/* Paginated: show a scrollbar when more panels exist than fit per page. */
+.trellis-collection.paginated { overflow-y: scroll; overflow-x: hidden; }
+.trellis-collection.paginated.paginated-h { overflow-y: hidden; overflow-x: scroll; }
+
+/* Zero-out the native vertical scrollbar gutter — custom div handles it.
+   width:0 is more reliable than display:none for removing the gutter in Chromium. */
+.trellis-collection.paginated:not(.paginated-h)::-webkit-scrollbar { width: 0; }
+.trellis-collection.paginated:not(.paginated-h) { scrollbar-width: none; }
+
+/* ── Horizontal webkit scrollbar (columns mode, no custom div yet) ── */
+.trellis-collection.paginated-h::-webkit-scrollbar        { height: 8px; }
+.trellis-collection.paginated-h::-webkit-scrollbar-track  { background: transparent; border-top: 1px solid var(--trellis-border-color); }
+.trellis-collection.paginated-h::-webkit-scrollbar-thumb  { background: #c2c2c2; border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
+.trellis-collection.paginated-h::-webkit-scrollbar-thumb:hover { background: #a8a8a8; border: 2px solid transparent; background-clip: content-box; }
+[data-sf-theme="dark"] .trellis-collection::-webkit-scrollbar-thumb       { background: #555555; border: 2px solid transparent; background-clip: content-box; }
+[data-sf-theme="dark"] .trellis-collection::-webkit-scrollbar-thumb:hover { background: #666666; border: 2px solid transparent; background-clip: content-box; }
+
+/* ── Custom vertical scrollbar (matches Spotfire native exactly) ── */
+#sf-vscrollbar {
+  flex: 0 0 12px;
+  width: 12px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--trellis-border-color);
+  color: #666666;
+  user-select: none;
+  box-sizing: border-box;
+}
+.sf-scrollbar-btn {
+  flex: 0 0 12px;
+  height: 12px;
+  width: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.sf-scrollbar-btn:hover { background: rgba(0,0,0,0.08); }
+.sf-scrollbar-btn:active { background: rgba(0,0,0,0.14); }
+.sf-scrollbar-track {
+  flex: 1 1 auto;
+  position: relative;
+  overflow: hidden;
+}
+.sf-scrollbar-thumb {
+  position: absolute;
+  left: 2px;
+  width: 6px;
+  min-height: 20px;
+  border-radius: 3px;
+  background: #aaaaaa;
+  border: 1px solid #888888;
+  cursor: grab;
+  box-sizing: border-box;
+}
+.sf-scrollbar-thumb:hover { background: #888888; border-color: #666666; }
+.sf-scrollbar-thumb:active { cursor: grabbing; }
+[data-sf-theme="dark"] #sf-vscrollbar { color: #aaaaaa; }
+[data-sf-theme="dark"] .sf-scrollbar-thumb { background: #666666; border-color: #555555; }
 
 .trellis-collection .trellis-panel {
   display: flex;
@@ -84,10 +161,8 @@ html, body {
   background: var(--trellis-title-bg);
   color: var(--trellis-title-color);
   font-family: var(--sf-font-family, inherit);
-  font-size: 11px;
+  font-size: var(--sf-scale-font-size, 11px);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   padding: 2px 6px;
   text-align: center;
   user-select: none;
@@ -125,10 +200,7 @@ html, body {
   display: none !important;
 }
 
-/* Trellised: show titles + borders */
-.trellis-collection.trellised {
-  border: 1px solid var(--trellis-border-color);
-}
+/* Trellised: show titles + borders on panels — outer border is on #trellis-wrapper */
 .trellis-collection.trellised .trellis-panel > .title { display: block; }
 
 /* Rows mode: stack vertically, title on the right (vertical text) */
@@ -137,6 +209,8 @@ html, body {
 }
 .trellis-collection.rows .trellis-panel {
   flex-direction: row-reverse;
+  box-sizing: border-box;
+  width: 100%;
   height: var(--panel-height, auto);
   min-height: var(--panel-height, auto);
   max-height: var(--panel-height, auto);
@@ -156,6 +230,7 @@ html, body {
 }
 .trellis-collection.columns .trellis-panel {
   flex-direction: column;
+  box-sizing: border-box;
   width: var(--panel-width, auto);
   min-width: var(--panel-width, auto);
   max-width: var(--panel-width, auto);
@@ -175,6 +250,7 @@ html, body {
 }
 .trellis-collection.panels .trellis-panel {
   flex-direction: column;
+  box-sizing: border-box;
   width: var(--panel-width, auto);
   min-width: var(--panel-width, auto);
   max-width: var(--panel-width, auto);
@@ -192,13 +268,13 @@ html, body {
   border-bottom: 1px solid var(--trellis-border-color);
 }
 
-/* ── Settings gear button (top-right) ──────────── */
+/* ── Settings gear button (floats over the top-right of the chart) ── */
 #settings-btn {
   position: absolute;
-  /* Sit centered on the trellis title strip (~22px tall) so the button
-     doesn't hang below the title rectangle into the chart area. */
-  top: 1px;
-  right: 2px;
+  /* Right edge sits 22px from the right — leaves room for a scrollbar (~17px)
+     plus a small gap, so the button never overlaps the scrollbar track. */
+  top: 2px;
+  right: 22px;
   width: 18px;
   height: 18px;
   padding: 2px;
@@ -206,21 +282,22 @@ html, body {
   align-items: center;
   justify-content: center;
   background: transparent;
-  color: var(--og-text-muted, #6a7a6a);
+  color: var(--sf-color, var(--sf-fallback-text-muted, #666666));
   border: 1px solid transparent;
   border-radius: 3px;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  transition: opacity 0.15s ease, color 0.15s ease;
   z-index: 10;
 }
 
 #mod-container:hover #settings-btn {
-  opacity: 1;
+  opacity: 0.6;
 }
 
 #settings-btn:hover {
-  color: var(--og-amber-bright, #e8a840);
+  opacity: 1 !important;
+  color: var(--sf-color, var(--sf-fallback-text, #333333));
   background: transparent;
   border-color: transparent;
 }
@@ -228,31 +305,31 @@ html, body {
 /* ── Settings panel ────────────────────────────── */
 #settings-panel {
   position: absolute;
-  top: 36px;
-  right: 6px;
+  top: 24px;
+  right: 22px;
   width: 240px;
   max-height: calc(100% - 50px);
   overflow-y: auto;
-  background:    var(--sf-panel-bg, rgba(19, 24, 31, 0.98));
-  border: 1px solid var(--sf-panel-border, var(--og-border, #2a3140));
-  border-radius: 4px;
+  background:    var(--sf-panel-bg, var(--sf-fallback-surface, #f5f5f5));
+  border: 1px solid var(--sf-panel-border, var(--sf-fallback-border, #d0d0d0));
+  border-radius: 2px;
   padding: 10px 12px;
-  color: var(--sf-color, var(--og-text, #c0a878));
-  box-shadow: var(--sf-panel-shadow, 0 4px 16px rgba(0, 0, 0, 0.6));
+  color: var(--sf-color, var(--sf-fallback-text, #333333));
+  box-shadow: var(--sf-panel-shadow, 0 2px 8px rgba(0,0,0,0.15));
   z-index: 20;
-  font-size: 11px;
-  font-family: var(--sf-font-family, inherit);
+  font-size: var(--sf-font-size, 12px);
+  font-family: var(--sf-font-family, "Segoe UI", Arial, sans-serif);
 }
 #settings-panel.hidden { display: none; }
 #settings-panel h4 {
   margin: 8px 0 4px 0;
   font-size: 10px;
   font-weight: 700;
-  color: var(--sf-color, var(--og-text-muted, #6a7a6a));
-  opacity: 0.7;
-  letter-spacing: 0.08em;
+  color: var(--sf-color, var(--sf-fallback-text-muted, #666666));
+  opacity: 0.75;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  border-bottom: 1px solid var(--sf-panel-border, var(--og-border, #2a3140));
+  border-bottom: 1px solid var(--sf-panel-border, var(--sf-fallback-border, #d0d0d0));
   padding-bottom: 3px;
 }
 #settings-panel h4:first-child { margin-top: 0; }
@@ -271,18 +348,18 @@ html, body {
   flex: 1;
 }
 #settings-panel label .lbl-val {
-  color: var(--og-amber-bright, #e8a840);
+  color: var(--sf-color, var(--sf-fallback-text-muted, #666666));
   font-variant-numeric: tabular-nums;
   min-width: 32px;
   text-align: right;
 }
 #settings-panel input[type="range"] {
   width: 100%;
-  accent-color: var(--og-amber, #c8862a);
+  accent-color: var(--sf-fallback-accent, #1e88b4);
 }
 #settings-panel input[type="checkbox"],
 #settings-panel input[type="radio"] {
-  accent-color: var(--og-amber, #c8862a);
+  accent-color: var(--sf-fallback-accent, #1e88b4);
 }
 
 /* <select> needs explicit colors. The native control inherits the panel's
@@ -292,61 +369,56 @@ html, body {
    that the browser pops up — those options DON'T inherit from <select> in
    Chromium, they fall back to system colors. */
 #settings-panel select {
-  background: var(--sf-panel-bg, #1a1f28);
-  color:      var(--sf-color, #e6e6e6);
-  border: 1px solid var(--sf-panel-border, var(--og-border, #2a3140));
-  border-radius: 3px;
+  background: var(--sf-panel-bg, var(--sf-fallback-surface, #f5f5f5));
+  color:      var(--sf-color, var(--sf-fallback-text, #333333));
+  border: 1px solid var(--sf-panel-border, var(--sf-fallback-border, #d0d0d0));
+  border-radius: 2px;
   padding: 2px 4px;
-  font-size: 11px;
+  font-size: var(--sf-font-size, 12px);
   font-family: inherit;
   min-width: 120px;
 }
 #settings-panel select option {
-  background: var(--sf-panel-bg, #1a1f28);
-  color:      var(--sf-color, #e6e6e6);
+  background: var(--sf-panel-bg, var(--sf-fallback-surface, #f5f5f5));
+  color:      var(--sf-color, var(--sf-fallback-text, #333333));
 }
 
 /* ── Axes & Labels ─────────────────────────────── */
 /* All scale styling pulls from Spotfire's theme via CSS variables set in
    main.js#applyStyling(); the oil-gas palette remains the fallback. */
 .axis text {
-  fill: var(--sf-scale-color, var(--og-text, #c0a878));
-  font-family: var(--sf-scale-font-family, var(--sf-font-family, inherit));
+  fill: var(--sf-scale-color, var(--sf-fallback-text-muted, #666666));
+  font-family: var(--sf-scale-font-family, var(--sf-font-family, "Segoe UI", Arial, sans-serif));
   font-size:   var(--sf-scale-font-size, 11px);
   font-weight: var(--sf-scale-font-weight, 400);
-  letter-spacing: 0.02em;
 }
 
 .axis line {
-  stroke: var(--sf-scale-tick, var(--og-border, #2a3140));
+  stroke: var(--sf-scale-tick, var(--sf-fallback-border, #d0d0d0));
 }
 .axis path {
-  stroke: var(--sf-scale-line, var(--og-border, #2a3140));
+  stroke: var(--sf-scale-line, var(--sf-fallback-border, #d0d0d0));
 }
 
 .axis--x .domain {
-  stroke: var(--sf-scale-line, var(--og-steel, #4a6070));
+  stroke: var(--sf-scale-line, var(--sf-fallback-border, #d0d0d0));
 }
 
 .y-label {
-  font-family: var(--sf-scale-font-family, var(--sf-font-family, inherit));
+  font-family: var(--sf-scale-font-family, var(--sf-font-family, "Segoe UI", Arial, sans-serif));
   font-size:   var(--sf-scale-font-size, 11px);
-  font-weight: 700;
+  font-weight: var(--sf-scale-font-weight, 400);
   dominant-baseline: middle;
   text-anchor: end;
-  fill: var(--sf-scale-color, var(--og-text, #c0a878));
+  fill: var(--sf-scale-color, var(--sf-fallback-text-muted, #666666));
   cursor: default;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .x-axis-title,
 .chart-title {
-  font-size: 12px;
-  fill: var(--sf-scale-color, var(--og-text-muted, #6a7a6a));
+  font-size: var(--sf-scale-font-size, 11px);
+  fill: var(--sf-scale-color, var(--sf-fallback-text-muted, #666666));
   text-anchor: middle;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 /* ── Ridge paths ───────────────────────────────── */
@@ -391,22 +463,23 @@ html, body {
 }
 
 /* ── Tooltip ───────────────────────────────────── */
+/* Native Spotfire tooltip (mod.controls.tooltip) is used;
+   this div is kept as a fallback but is normally hidden. */
 .tooltip {
   position: absolute;
   pointer-events: none;
-  background: rgba(11, 13, 17, 0.96);
-  color: #c0a878;
-  border: 1px solid rgba(200, 134, 42, 0.35);
-  border-left: 3px solid #c8862a;
-  border-radius: 4px;
-  padding: 9px 13px;
-  font-size: 12px;
-  line-height: 1.7;
+  background: var(--sf-panel-bg, var(--sf-fallback-surface, #f5f5f5));
+  color: var(--sf-color, var(--sf-fallback-text, #333333));
+  border: 1px solid var(--sf-panel-border, var(--sf-fallback-border, #d0d0d0));
+  border-radius: 2px;
+  padding: 6px 10px;
+  font-size: var(--sf-font-size, 12px);
+  line-height: 1.5;
   max-width: 240px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7), 0 0 8px rgba(200,134,42,0.12);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
   z-index: 100;
   transition: opacity 0.1s ease;
-  font-family: "Segoe UI", "Roboto Mono", monospace;
+  font-family: var(--sf-font-family, "Segoe UI", Arial, sans-serif);
 }
 
 .tooltip.hidden {
@@ -414,49 +487,19 @@ html, body {
   visibility: hidden;
 }
 
-.tooltip-group {
-  font-weight: 700;
-  font-size: 12px;
-  margin-bottom: 5px;
-  border-bottom: 1px solid rgba(200,134,42,0.25);
-  padding-bottom: 4px;
-  color: #e8a840;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.tooltip-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.tooltip-label {
-  color: #6a7a6a;
-  font-size: 11px;
-}
-
-.tooltip-value {
-  font-weight: 600;
-  color: #c0a878;
-  font-variant-numeric: tabular-nums;
-}
-
 /* ── Empty / error state ───────────────────────── */
 .empty-state {
-  fill: var(--sf-color, var(--og-text-muted, #6a7a6a));
-  font-size: 13px;
+  fill: var(--sf-color, var(--sf-fallback-text-muted, #666666));
+  font-size: var(--sf-font-size, 12px);
   text-anchor: middle;
   dominant-baseline: middle;
-  letter-spacing: 0.05em;
 }
 
 /* ── Legend ────────────────────────────────── */
 .legend-item text {
-  font-size: 11px;
-  fill: var(--sf-scale-color, var(--og-text, #c0a878));
+  font-size: var(--sf-scale-font-size, 11px);
+  fill: var(--sf-scale-color, var(--sf-fallback-text-muted, #666666));
   dominant-baseline: middle;
-  letter-spacing: 0.03em;
 }
 
 /* Rubber-band marking rectangle — overridden by the canonical rule above. */
