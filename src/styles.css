@@ -201,7 +201,9 @@ html, body {
 }
 
 /* Trellised: show titles + borders on panels — outer border is on #trellis-wrapper */
-.trellis-collection.trellised .trellis-panel > .title { display: block; }
+.trellis-collection.trellised .trellis-panel > .title { display: block; cursor: pointer; transition: background 0.12s, color 0.12s; }
+.trellis-collection.trellised .trellis-panel > .title:hover { background: var(--trellis-title-hover-bg, rgba(128,128,128,0.18)); }
+.trellis-collection.trellised .trellis-panel > .title.panel-header-selected { background: var(--trellis-title-selected-bg, rgba(80,140,220,0.28)); color: var(--sf-color, inherit); }
 
 /* Rows mode: stack vertically, title on the right (vertical text) */
 .trellis-collection.rows {

@@ -711,9 +711,16 @@ Spotfire.initialize(async (mod) => {
           if (idx >= (gridRows - 1) * gridCols)      panelEl.classed("last-of-column", true);
         }
       }
+      const allLeafMarked = leaf.rows.length > 0 && leaf.rows.every((r) => r.marked);
       panelEl.append("div")
-        .attr("class", "title")
-        .text(leaf.label == null ? "" : String(leaf.label));
+        .attr("class", "title" + (allLeafMarked ? " panel-header-selected" : ""))
+        .text(leaf.label == null ? "" : String(leaf.label))
+        .on("click", async (event) => {
+          event.stopPropagation();
+          const additive = event.ctrlKey || event.metaKey;
+          const rowRefs = leaf.rows.map((r) => r.row).filter(Boolean);
+          await markRows(rowRefs, additive, dataView);
+        });
       panelEl.append("div")
         .attr("class", "trellis-panel-content")
         .attr("data-trellis-id", leaf.id)

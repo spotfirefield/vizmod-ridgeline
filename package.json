@@ -1,7 +1,7 @@
 {
-  "name": "spotfire-mods-joyplot",
+  "name": "spotfire-ridgeline",
   "version": "1.0.0",
-  "description": "Joy Plot (Ridgeline Chart) Spotfire Mod",
+  "description": "Ridgeline plot",
   "scripts": {
     "build:js": "webpack --mode production",
     "watch:js": "webpack --mode development --watch",
